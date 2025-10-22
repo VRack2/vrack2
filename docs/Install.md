@@ -1,6 +1,7 @@
 - [Требования](#требования)
 - [Установка](#установка)
   - [Ubuntu/Linux/Mac](#ubuntulinuxmac)
+  - [Настройка автозапуска (Ubuntu/Systemd)](#настройка-автозапуска-ubuntusystemd)
 
 ## Требования
 
@@ -68,6 +69,26 @@ npm run start
 ```
 
 Используя [VRack2-Manager](https://github.com/VRack2/vrack2-manager) можно подключится и работающему инстансу VRack2.
+
+### Настройка автозапуска (Ubuntu/Systemd)
+
+Для автозапуска в ubuntu есть файл службы. Скопируйте его:
+
+```bash
+cp /opt/vrack2-service/devices/vrack2/vrack2.service /etc/systemd/system/
+```
+
+Обновление демона служб:
+```bash
+systemctl daemon-reload
+systemctl enable vrack2
+systemctl start vrack2
+```
+Проверяем статус:
+
+```bash
+service vrack2 status
+```
 
 **Теперь стоит переходить к написанию своего [первого сервиса](./FirstService.md)**
 
