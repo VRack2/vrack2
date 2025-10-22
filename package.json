@@ -1,0 +1,22 @@
+{
+  "name": "vrack2",
+  "version": "1.0.0",
+  "description": "Base devices for vrack2",
+  "author": "Boris Bobylev",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/VRack2/vrack2",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VRack2/vrack2.git"
+  },
+  "bugs": {
+    "url": "https://github.com/VRack2/vrack2/issues"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@types/ws": "^8.5.5",
+    "ws": "^8.13.0"
+  }
+}

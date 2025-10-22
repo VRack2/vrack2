@@ -1,0 +1,31 @@
+{
+    "devices": [
+        {
+            "id": "Master",
+            "type": "vrack2.Master",
+            "options": { "registerPorts": 4, "commandPorts": 4 },
+            "connections": []
+        },
+        {
+            "id": "WorkerProvider",
+            "type": "vrack2.WorkerProvider",
+            "options": { },
+            "connections": [
+                "WorkerProvider.command -> Master.command1"
+            ]
+        },
+        {
+            "id": "Service",
+            "type": "vrack2.Service",
+            "options": { 
+                
+             },
+            "connections": [
+                "Service.send -> WorkerProvider.send",
+                "Service.master.command -> Master.command2",
+                "Service.register.command -> Master.register1",
+                "Service.broadcast -> WorkerProvider.broadcast"
+            ]
+        }
+    ]
+}

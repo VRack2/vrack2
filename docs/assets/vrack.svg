@@ -1,0 +1,719 @@
+<svg id="grid" xmlns="http://www.w3.org/2000/svg" version="1.1" width="2050" height="1600" 
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    >
+    <defs>
+        <pattern id="linesX" height="1" width="12.5" patternUnits="userSpaceOnUse">
+            <line x1="0" y1="0" x2="5.5" y2="0" stroke-width="2" stroke="#404040"></line>
+        </pattern>
+        <pattern id="linesY" height="12.5" width="1" patternUnits="userSpaceOnUse">
+            <line x1="0" y1="0" x2="0" y2="5.5" stroke-width="2" stroke="#404040"></line>
+        </pattern>
+    </defs>
+
+    <rect width="2050" height="1600" fill="#545454" x="0" y="0"></rect>
+    <g class="grid-group">
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="0"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="50"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="100"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="150"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="200"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="250"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="300"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="350"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="400"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="450"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="500"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="550"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="600"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="650"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="700"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="750"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="800"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="850"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="900"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="950"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1000"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1050"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1100"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1150"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1200"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1250"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1300"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1350"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1400"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1450"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1500"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1550"></rect>
+        <rect width="9750" height="1" fill="url(#linesX)" x="0" y="1600"></rect>
+
+        <rect width="1" height="9750" fill="url(#linesY)" x="0" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="50" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="100" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="150" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="200" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="250" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="300" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="350" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="400" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="450" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="500" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="550" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="600" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="650" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="700" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="750" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="800" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="850" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="900" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="950" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1000" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1050" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1100" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1150" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1200" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1250" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1300" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1350" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1400" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1450" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1500" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1550" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1600" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1650" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1700" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1750" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1800" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1850" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1900" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="1950" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="2000" y="0"></rect>
+        <rect width="1" height="9750" fill="url(#linesY)" x="2050" y="0"></rect>
+
+    </g>
+    <g class="devices-group">
+        <g class="device device--WSProvider device--0">
+            <rect width="350" height="300" fill="#45423d" x="150" y="450" class="device__bg"></rect>
+            <g class="device__header">
+                <rect width="350" height="50" fill="#3d3835" x="150" y="450"></rect>
+                <text font-size="28" letter-spacing="2" x="167.5" y="485" class="device__label"
+                    fill="#fff">WSProvider</text>
+            </g>
+            <g class="device__inputs"><!-- make group component and dance from it -->
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="166.6666717529297" rx="10" y="550"></rect>
+                    <text x="175" y="540" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">main inputs</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="210" y="580" font-size="20" style="" text-anchor="start"
+                            fill="#fff">send</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__outputs">
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="150" fill="#202020"
+                        x="328.4166564941406" rx="10" y="550"></rect>
+                    <text x="336.75" y="540" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">main outputs</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="431.75" y="580" font-size="20" style="" text-anchor="end"
+                            fill="#fff">command</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="431.75" y="630" font-size="20" style="" text-anchor="end"
+                            fill="#fff">register</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="431.75" y="680" font-size="20" style="" text-anchor="end"
+                            fill="#fff">unregister</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__footer">
+                <text font-size="18" x="165" y="732.5" class="device__type" fill="#fff5">
+                    vrack2.WSProvider</text>
+            </g>
+        </g>
+        <g class="device device--ProvidersClients device--1">
+            <rect width="350" height="400" fill="#45423d" x="600" y="450" class="device__bg"></rect>
+            <g class="device__header">
+                <rect width="350" height="50" fill="#3d3835" x="600" y="450"></rect>
+                <text font-size="28" letter-spacing="2" x="617.5" y="485" class="device__label"
+                    fill="#fff">ProvidersClients</text>
+            </g>
+            <g class="device__inputs"><!-- make group component and dance from it -->
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="150" fill="#202020"
+                        x="616.6666666666666" rx="10" y="550"></rect>
+                    <text x="625" y="540" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">client1</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="660" y="580" font-size="20" style="" text-anchor="start"
+                            fill="#fff">command</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="660" y="630" font-size="20" style="" text-anchor="start"
+                            fill="#fff">register</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="660" y="680" font-size="20" style="" text-anchor="start"
+                            fill="#fff">unregister</text>
+                    </g>
+                </g>
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="616.6666666666666" rx="10" y="750"></rect>
+                    <text x="625" y="740" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">client</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="660" y="780" font-size="20" style="" text-anchor="start"
+                            fill="#fff">send</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__outputs">
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="150" fill="#202020"
+                        x="778.4166666666666" rx="10" y="550"></rect>
+                    <text x="786.75" y="540" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">clients</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="881.75" y="580" font-size="20" style="" text-anchor="end"
+                            fill="#fff">command</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="881.75" y="630" font-size="20" style="" text-anchor="end"
+                            fill="#fff">register</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="881.75" y="680" font-size="20" style="" text-anchor="end"
+                            fill="#fff">unregister</text>
+                    </g>
+                </g>
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="778.4166666666666" rx="10" y="750"></rect>
+                    <text x="786.75" y="740" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">provider1</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="881.75" y="780" font-size="20" style="" text-anchor="end"
+                            fill="#fff">send</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__footer">
+                <text font-size="18" x="615" y="832.5" class="device__type" fill="#fff5">
+                    vrack2.ProvidersClients</text>
+            </g>
+        </g>
+        <g class="device device--Guard device--2">
+            <rect width="350" height="450" fill="#45423d" x="1050" y="100" class="device__bg"></rect>
+            <g class="device__header">
+                <rect width="350" height="50" fill="#3d3835" x="1050" y="100"></rect>
+                <text font-size="28" letter-spacing="2" x="1067.5" y="135" class="device__label"
+                    fill="#fff">Guard</text>
+            </g>
+            <g class="device__inputs"><!-- make group component and dance from it -->
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="1066.6666259765625" rx="10" y="200"></rect>
+                    <text x="1075" y="190" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">main inputs</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1110" y="230" font-size="20" style="" text-anchor="start"
+                            fill="#fff">broadcast</text>
+                    </g>
+                </g>
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="150" fill="#202020"
+                        x="1066.6666259765625" rx="10" y="300"></rect>
+                    <text x="1075" y="290" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">clients</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1110" y="330" font-size="20" style="" text-anchor="start"
+                            fill="#fff">command</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1110" y="380" font-size="20" style="" text-anchor="start"
+                            fill="#fff">register</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1110" y="430" font-size="20" style="" text-anchor="start"
+                            fill="#fff">unregister</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__outputs">
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="1228.4166259765625" rx="10" y="200"></rect>
+                    <text x="1236.75" y="190" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">master</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1331.75" y="230" font-size="20" style="" text-anchor="end"
+                            fill="#fff">command</text>
+                    </g>
+                </g>
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="1228.4166259765625" rx="10" y="300"></rect>
+                    <text x="1236.75" y="290" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">register</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1331.75" y="330" font-size="20" style="" text-anchor="end"
+                            fill="#fff">command</text>
+                    </g>
+                </g>
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="1228.4166259765625" rx="10" y="400"></rect>
+                    <text x="1236.75" y="390" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">client</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1331.75" y="430" font-size="20" style="" text-anchor="end"
+                            fill="#fff">send</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__footer">
+                <text font-size="18" x="1065" y="532.5" class="device__type" fill="#fff5">
+                    vrack2.Guard</text>
+            </g>
+        </g>
+        <g class="device device--Master device--3">
+            <rect width="350" height="500" fill="#45423d" x="1550" y="700" class="device__bg"></rect>
+            <g class="device__header">
+                <rect width="350" height="50" fill="#3d3835" x="1550" y="700"></rect>
+                <text font-size="28" letter-spacing="2" x="1567.5" y="735" class="device__label"
+                    fill="#fff">Master</text>
+            </g>
+            <g class="device__inputs"><!-- make group component and dance from it -->
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="350" fill="#202020"
+                        x="1566.6666666666667" rx="10" y="800"></rect>
+                    <text x="1575" y="790" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">main inputs</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1610" y="830" font-size="20" style="" text-anchor="start"
+                            fill="#fff">command1</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1610" y="880" font-size="20" style="" text-anchor="start"
+                            fill="#fff">command2</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1610" y="930" font-size="20" style="" text-anchor="start"
+                            fill="#fff">register1</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1610" y="980" font-size="20" style="" text-anchor="start"
+                            fill="#fff">register2</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1610" y="1030" font-size="20" style="" text-anchor="start"
+                            fill="#fff">register3</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1610" y="1080" font-size="20" style="" text-anchor="start"
+                            fill="#fff">register4</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1610" y="1130" font-size="20" style="" text-anchor="start"
+                            fill="#fff">register5</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__outputs">
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="1728.4166666666667" rx="10" y="800"></rect>
+                    <text x="1736.75" y="790" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">main outputs</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1831.75" y="830" font-size="20" style="" text-anchor="end"
+                            fill="#fff">submaster</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__footer">
+                <text font-size="18" x="1565" y="1182.5" class="device__type" fill="#fff5">
+                    vrack2.Master</text>
+            </g>
+        </g>
+        <g class="device device--Broadcaster device--4">
+            <rect width="350" height="400" fill="#45423d" x="1050" y="600" class="device__bg"></rect>
+            <g class="device__header">
+                <rect width="350" height="50" fill="#3d3835" x="1050" y="600"></rect>
+                <text font-size="28" letter-spacing="2" x="1067.5" y="635" class="device__label"
+                    fill="#fff">Broadcaster</text>
+            </g>
+            <g class="device__inputs"><!-- make group component and dance from it -->
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="200" fill="#202020"
+                        x="1066.6666666666667" rx="10" y="700"></rect>
+                    <text x="1075" y="690" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">clients</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1110" y="730" font-size="20" style="" text-anchor="start"
+                            fill="#fff">broadcast1</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1110" y="780" font-size="20" style="" text-anchor="start"
+                            fill="#fff">broadcast2</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1110" y="830" font-size="20" style="" text-anchor="start"
+                            fill="#fff">register</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1110" y="880" font-size="20" style="" text-anchor="start"
+                            fill="#fff">unregister</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__outputs">
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="1228.4166666666667" rx="10" y="700"></rect>
+                    <text x="1236.75" y="690" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">register</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1331.75" y="730" font-size="20" style="" text-anchor="end"
+                            fill="#fff">command</text>
+                    </g>
+                </g>
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="1228.4166666666667" rx="10" y="800"></rect>
+                    <text x="1236.75" y="790" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">guard</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1331.75" y="830" font-size="20" style="" text-anchor="end"
+                            fill="#fff">broadcast</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__footer">
+                <text font-size="18" x="1065" y="982.5" class="device__type" fill="#fff5">
+                    vrack2.Broadcaster</text>
+            </g>
+        </g>
+        <g class="device device--ApiKeyManager device--5">
+            <rect width="350" height="200" fill="#45423d" x="1050" y="1100" class="device__bg"></rect>
+            <g class="device__header">
+                <rect width="350" height="50" fill="#3d3835" x="1050" y="1100"></rect>
+                <text font-size="28" letter-spacing="2" x="1067.5" y="1135" class="device__label"
+                    fill="#fff">ApiKeyManager</text>
+            </g>
+            <g class="device__inputs"><!-- make group component and dance from it -->
+            </g>
+            <g class="device__outputs">
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="1228.4166666666667" rx="10" y="1200"></rect>
+                    <text x="1236.75" y="1190" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">register</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1331.75" y="1230" font-size="20" style="" text-anchor="end"
+                            fill="#fff">command</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__footer">
+                <text font-size="18" x="1065" y="1282.5" class="device__type" fill="#fff5">
+                    vrack2.KeyManager</text>
+            </g>
+        </g>
+        <g class="device device--WorkersManager device--6">
+            <rect width="350" height="350" fill="#45423d" x="600" y="1050" class="device__bg"></rect>
+            <g class="device__header">
+                <rect width="350" height="50" fill="#3d3835" x="600" y="1050"></rect>
+                <text font-size="28" letter-spacing="2" x="617.5" y="1085" class="device__label"
+                    fill="#fff">WorkersManager</text>
+            </g>
+            <g class="device__inputs"><!-- make group component and dance from it -->
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="150" fill="#202020"
+                        x="616.6666666666666" rx="10" y="1150"></rect>
+                    <text x="625" y="1140" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">worker</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="660" y="1180" font-size="20" style="" text-anchor="start"
+                            fill="#fff">add</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="660" y="1230" font-size="20" style="" text-anchor="start"
+                            fill="#fff">stop</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="660" y="1280" font-size="20" style="" text-anchor="start"
+                            fill="#fff">request</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__outputs">
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="778.4166666666666" rx="10" y="1150"></rect>
+                    <text x="786.75" y="1140" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">main outputs</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="881.75" y="1180" font-size="20" style="" text-anchor="end"
+                            fill="#fff">broadcast</text>
+                    </g>
+                </g>
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="778.4166666666666" rx="10" y="1250"></rect>
+                    <text x="786.75" y="1240" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">master</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="881.75" y="1280" font-size="20" style="" text-anchor="end"
+                            fill="#fff">command</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__footer">
+                <text font-size="18" x="615" y="1382.5" class="device__type" fill="#fff5">
+                    vrack2.WorkersManager</text>
+            </g>
+        </g>
+        <g class="device device--ServiceManager device--7">
+            <rect width="350" height="500" fill="#45423d" x="150" y="850" class="device__bg"></rect>
+            <g class="device__header">
+                <rect width="350" height="50" fill="#3d3835" x="150" y="850"></rect>
+                <text font-size="28" letter-spacing="2" x="167.5" y="885" class="device__label"
+                    fill="#fff">ServiceManager</text>
+            </g>
+            <g class="device__inputs"><!-- make group component and dance from it -->
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="166.66666666666666" rx="10" y="950"></rect>
+                    <text x="175" y="940" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">main inputs</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="210" y="980" font-size="20" style="" text-anchor="start"
+                            fill="#fff">submaster</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__outputs">
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="328.4166666666667" rx="10" y="950"></rect>
+                    <text x="336.75" y="940" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">main outputs</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="431.75" y="980" font-size="20" style="" text-anchor="end"
+                            fill="#fff">broadcast</text>
+                    </g>
+                </g>
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="328.4166666666667" rx="10" y="1050"></rect>
+                    <text x="336.75" y="1040" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">register</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="431.75" y="1080" font-size="20" style="" text-anchor="end"
+                            fill="#fff">command</text>
+                    </g>
+                </g>
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="150" fill="#202020"
+                        x="328.4166666666667" rx="10" y="1150"></rect>
+                    <text x="336.75" y="1140" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">worker</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="431.75" y="1180" font-size="20" style="" text-anchor="end"
+                            fill="#fff">add</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="431.75" y="1230" font-size="20" style="" text-anchor="end"
+                            fill="#fff">stop</text>
+                    </g>
+                    <g class="device__port"><!--v-if-->
+                        <text x="431.75" y="1280" font-size="20" style="" text-anchor="end"
+                            fill="#fff">request</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__footer">
+                <text font-size="18" x="165" y="1332.5" class="device__type" fill="#fff5">
+                    vrack2.ServiceManager</text>
+            </g>
+        </g>
+        <g class="device device--System device--8">
+            <rect width="350" height="200" fill="#45423d" x="1050" y="1350" class="device__bg"></rect>
+            <g class="device__header">
+                <rect width="350" height="50" fill="#3d3835" x="1050" y="1350"></rect>
+                <text font-size="28" letter-spacing="2" x="1067.5" y="1385" class="device__label"
+                    fill="#fff">System</text>
+            </g>
+            <g class="device__inputs"><!-- make group component and dance from it -->
+            </g>
+            <g class="device__outputs">
+                <g class="device__port-group">
+                    <rect width="153.33333333333334" height="50" fill="#202020"
+                        x="1228.4166666666667" rx="10" y="1450"></rect>
+                    <text x="1236.75" y="1440" font-size="16" fill="#fff"
+                        style="text-transform: uppercase; font-weight: 700;">register</text>
+                    <g class="device__port"><!--v-if-->
+                        <text x="1331.75" y="1480" font-size="20" style="" text-anchor="end"
+                            fill="#fff">command</text>
+                    </g>
+                </g>
+            </g>
+            <g class="device__footer">
+                <text font-size="18" x="1065" y="1532.5" class="device__type" fill="#fff5">
+                    vrack2.System</text>
+            </g>
+        </g>
+    </g>
+    <g class="device-relations">
+        <g>
+            <path d="M456.75 575 Q547.125 575 637.5 575" fill-opacity="0" stroke="#66664D" stroke-opacity="0.5"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="456.75" cy="575" r="9" stroke-width="5" stroke="#66664D"></circle>
+            <circle cx="637.5" cy="575" r="9" stroke-width="5" stroke="#66664D"></circle>
+        </g>
+        <g>
+            <path d="M456.75 625 Q547.125 625 637.5 625" fill-opacity="0" stroke="#66664D" stroke-opacity="0.5"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="456.75" cy="625" r="9" stroke-width="5" stroke="#66664D"></circle>
+            <circle cx="637.5" cy="625" r="9" stroke-width="5" stroke="#66664D"></circle>
+        </g>
+        <g>
+            <path d="M456.75 675 Q547.125 675 637.5 675" fill-opacity="0" stroke="#B3B31A" stroke-opacity="0.5"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="456.75" cy="675" r="9" stroke-width="5" stroke="#B3B31A"></circle>
+            <circle cx="637.5" cy="675" r="9" stroke-width="5" stroke="#B3B31A"></circle>
+        </g>
+        <g>
+            <path d="M906.75 575 Q997.125 575 1087.5 325" stroke="#B34D4D" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="906.75" cy="575" r="9" stroke-width="5" stroke="#B34D4D"></circle>
+            <circle cx="1087.5" cy="325" r="9" stroke-width="5" stroke="#B34D4D"></circle>
+        </g>
+        <g>
+            <path d="M906.75 625 Q997.125 625 1087.5 375" stroke="#33991A" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="906.75" cy="625" r="9" stroke-width="5" stroke="#33991A"></circle>
+            <circle cx="1087.5" cy="375" r="9" stroke-width="5" stroke="#33991A"></circle>
+        </g>
+        <g>
+            <path d="M906.75 625 Q997.125 825 1087.5 825" stroke="#4D8000" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="906.75" cy="625" r="9" stroke-width="5" stroke="#4D8000"></circle>
+            <circle cx="1087.5" cy="825" r="9" stroke-width="5" stroke="#4D8000"></circle>
+        </g>
+        <g>
+            <path d="M906.75 675 Q997.125 675 1087.5 425" stroke="#4DB3FF" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="906.75" cy="675" r="9" stroke-width="5" stroke="#4DB3FF"></circle>
+            <circle cx="1087.5" cy="425" r="9" stroke-width="5" stroke="#4DB3FF"></circle>
+        </g>
+        <g>
+            <path d="M906.75 675 Q997.125 875 1087.5 875" stroke="#CC80CC" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="906.75" cy="675" r="9" stroke-width="5" stroke="#CC80CC"></circle>
+            <circle cx="1087.5" cy="875" r="9" stroke-width="5" stroke="#CC80CC"></circle>
+        </g>
+        <g>
+            <path d="M906.75 775 Q547.125 775 187.5 575" stroke="#CCCC00" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="906.75" cy="775" r="9" stroke-width="5" stroke="#CCCC00"></circle>
+            <circle cx="187.5" cy="575" r="9" stroke-width="5" stroke="#CCCC00"></circle>
+        </g>
+        <g>
+            <path d="M1356.75 225 Q1472.125 825 1587.5 825" stroke="#B366CC" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="1356.75" cy="225" r="9" stroke-width="5" stroke="#B366CC"></circle>
+            <circle cx="1587.5" cy="825" r="9" stroke-width="5" stroke="#B366CC"></circle>
+        </g>
+        <g>
+            <path d="M1356.75 325 Q1472.125 925 1587.5 925" stroke="#FF33FF" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="1356.75" cy="325" r="9" stroke-width="5" stroke="#FF33FF"></circle>
+            <circle cx="1587.5" cy="925" r="9" stroke-width="5" stroke="#FF33FF"></circle>
+        </g>
+        <g>
+            <path d="M1356.75 425 Q997.125 775 637.5 775" stroke="#66994D" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="1356.75" cy="425" r="9" stroke-width="5" stroke="#66994D"></circle>
+            <circle cx="637.5" cy="775" r="9" stroke-width="5" stroke="#66994D"></circle>
+        </g>
+        <g>
+            <path d="M1856.75 825 Q1022.125 975 187.5 975" stroke="#1AFF33" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="1856.75" cy="825" r="9" stroke-width="5" stroke="#1AFF33"></circle>
+            <circle cx="187.5" cy="975" r="9" stroke-width="5" stroke="#1AFF33"></circle>
+        </g>
+        <g>
+            <path d="M1356.75 725 Q1472.125 975 1587.5 975" stroke="#4D80CC" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="1356.75" cy="725" r="9" stroke-width="5" stroke="#4D80CC"></circle>
+            <circle cx="1587.5" cy="975" r="9" stroke-width="5" stroke="#4D80CC"></circle>
+        </g>
+        <g>
+            <path d="M1356.75 825 Q1222.125 825 1087.5 225" stroke="#E6B333" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="1356.75" cy="825" r="9" stroke-width="5" stroke="#E6B333"></circle>
+            <circle cx="1087.5" cy="225" r="9" stroke-width="5" stroke="#E6B333"></circle>
+        </g>
+        <g>
+            <path d="M1356.75 1225 Q1472.125 1225 1587.5 1025" stroke="#4DB380" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="1356.75" cy="1225" r="9" stroke-width="5" stroke="#4DB380"></circle>
+            <circle cx="1587.5" cy="1025" r="9" stroke-width="5" stroke="#4DB380"></circle>
+        </g>
+        <g>
+            <path d="M906.75 1275 Q1247.125 1275 1587.5 875" stroke="#CC80CC" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="906.75" cy="1275" r="9" stroke-width="5" stroke="#CC80CC"></circle>
+            <circle cx="1587.5" cy="875" r="9" stroke-width="5" stroke="#CC80CC"></circle>
+        </g>
+        <g>
+            <path d="M906.75 1175 Q997.125 1175 1087.5 725" stroke="#6666FF" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="906.75" cy="1175" r="9" stroke-width="5" stroke="#6666FF"></circle>
+            <circle cx="1087.5" cy="725" r="9" stroke-width="5" stroke="#6666FF"></circle>
+        </g>
+        <g>
+            <path d="M456.75 1075 Q1022.125 1075 1587.5 1075" stroke="#4DB380" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="456.75" cy="1075" r="9" stroke-width="5" stroke="#4DB380"></circle>
+            <circle cx="1587.5" cy="1075" r="9" stroke-width="5" stroke="#4DB380"></circle>
+        </g>
+        <g>
+            <path d="M456.75 1175 Q547.125 1175 637.5 1175" stroke="#B3B31A" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="456.75" cy="1175" r="9" stroke-width="5" stroke="#B3B31A"></circle>
+            <circle cx="637.5" cy="1175" r="9" stroke-width="5" stroke="#B3B31A"></circle>
+        </g>
+        <g>
+            <path d="M456.75 1225 Q547.125 1225 637.5 1225" stroke="#99FF99" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="456.75" cy="1225" r="9" stroke-width="5" stroke="#99FF99"></circle>
+            <circle cx="637.5" cy="1225" r="9" stroke-width="5" stroke="#99FF99"></circle>
+        </g>
+        <g>
+            <path d="M456.75 1275 Q547.125 1275 637.5 1275" stroke="#FF1A66" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="456.75" cy="1275" r="9" stroke-width="5" stroke="#FF1A66"></circle>
+            <circle cx="637.5" cy="1275" r="9" stroke-width="5" stroke="#FF1A66"></circle>
+        </g>
+        <g>
+            <path d="M456.75 975 Q772.125 975 1087.5 775" stroke="#6666FF" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="456.75" cy="975" r="9" stroke-width="5" stroke="#6666FF"></circle>
+            <circle cx="1087.5" cy="775" r="9" stroke-width="5" stroke="#6666FF"></circle>
+        </g>
+        <g> 
+            <path d="M1356.75 1475 Q1472.125 1475 1587.5 1125" stroke="#9900B3" stroke-opacity="0.5" fill-opacity="0"
+                stroke-width="9" class="device__relation"></path>
+            <circle cx="1356.75" cy="1475" r="9" stroke-width="5" stroke="#9900B3"></circle>
+            <circle cx="1587.5" cy="1125" r="9" stroke-width="5" stroke="#9900B3"></circle>
+        </g>
+    </g>
+</svg>

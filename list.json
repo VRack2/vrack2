@@ -1,0 +1,17 @@
+{
+    "Master": "devices/Master",
+    "Interval": "devices/Interval",
+    "Guard": "devices/Guard",
+    "WSProvider": "devices/WSProvider",
+    "ProvidersClients": "devices/ProvidersClients",
+    "Broadcaster": "devices/Broadcaster",
+    "KeyManager": "devices/KeyManager",
+    "WorkersManager": "devices/WorkersManager",
+    "ServiceManager": "devices/ServiceManager",
+    "WorkerProvider": "devices/WorkerProvider",
+    "Service": "devices/Service",
+    "System": "devices/System",
+    "InterService": "devices/InterService",
+    "DeviceInfo": "devices/DeviceInfo",
+    "DeviceWorker": "devices/DeviceWorker"
+}

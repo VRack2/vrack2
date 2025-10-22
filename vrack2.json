@@ -1,0 +1,107 @@
+{
+    "devices": [
+        {
+            "id": "WSProvider",
+            "type": "vrack2.WSProvider",
+            "options": { "port": 4044 },
+            "connections": [
+                "WSProvider.command -> ProvidersClients.client1.command", 
+                "WSProvider.register -> ProvidersClients.client1.register", 
+                "WSProvider.unregister -> ProvidersClients.client1.unregister"        
+            ]
+        },
+        {
+            "id": "ProvidersClients",
+            "type": "vrack2.ProvidersClients",
+            "options": { "providers": 1 },
+            "connections": [
+                "ProvidersClients.provider1.send -> WSProvider.send", 
+                "ProvidersClients.clients.command -> Guard.clients.command",
+                "ProvidersClients.clients.register -> Guard.clients.register",
+                "ProvidersClients.clients.unregister -> Guard.clients.unregister",        
+                "ProvidersClients.clients.register -> Broadcaster.clients.register",
+                "ProvidersClients.clients.unregister -> Broadcaster.clients.unregister"        
+            ]
+        },
+        {
+            "id": "Guard",
+            "type": "vrack2.Guard",
+            "options": { "providers": 1 },
+            "connections": [
+                "Guard.client.send -> ProvidersClients.client.send",
+                "Guard.master.command -> Master.command1",
+                "Guard.register.command -> Master.register1"
+            ]
+        },
+        {
+            "id": "Master",
+            "type": "vrack2.Master",
+            "options": { 
+                "registerPorts": 6,
+                "commandPorts": 2
+            },
+            "connections": [
+                "Master.submaster -> ServiceManager.submaster"
+            ]
+        },
+        {
+            "id": "Broadcaster",
+            "type": "vrack2.Broadcaster",
+            "options": {
+                "broadcastInputs": 2
+             },
+            "connections":[
+                "Broadcaster.guard.broadcast -> Guard.broadcast",
+                "Broadcaster.register.command -> Master.register2"
+            ]
+        },
+        {
+            "id": "ApiKeyManager",
+            "type": "vrack2.KeyManager",
+            "options": { },
+            "connections": [
+                "ApiKeyManager.register.command -> Master.register3"
+            ]
+        },
+        {
+            "id": "WorkersManager",
+            "type": "vrack2.WorkersManager",
+            "options": { },
+            "connections":[
+                "WorkersManager.master.command -> Master.command2",
+                "WorkersManager.broadcast -> Broadcaster.clients.broadcast1"
+            ]
+        },
+        {
+            "id": "ServiceManager",
+            "type": "vrack2.ServiceManager",
+            "options": { },
+            "connections":[
+                "ServiceManager.register.command -> Master.register4",
+                "ServiceManager.worker.add -> WorkersManager.worker1.add",
+                "ServiceManager.worker.stop -> WorkersManager.worker1.stop",
+                "ServiceManager.worker.request -> WorkersManager.worker1.request",
+                "ServiceManager.broadcast -> Broadcaster.clients.broadcast2"
+            ]
+        },
+        {
+            "id": "System",
+            "type": "vrack2.System",
+            "options": { },
+            "connections": [
+                "System.register.command -> Master.register5"
+            ]
+        },
+        {
+            "id": "DeviceInfo",
+            "type": "vrack2.DeviceInfo",
+            "options": { },
+            "connections": [
+                "DeviceInfo.register.command -> Master.register6",
+                "DeviceInfo.worker.add -> WorkersManager.worker2.add",
+                "DeviceInfo.worker.stop -> WorkersManager.worker2.stop",
+                "DeviceInfo.worker.request -> WorkersManager.worker2.request"
+            ]
+        }
+    ]
+}
