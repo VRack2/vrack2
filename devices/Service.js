@@ -323,6 +323,7 @@ class Serivce extends vrack2_core_1.Device {
             const MainProcessEx = new MainProcessClass({ id: data.info.id, service, confFile: data.info.configPath });
             MainProcessEx.Container.parent = this.Container;
             this.ServiceContainer = MainProcessEx.Container;
+            this.ServiceContainer.meta = data.meta;
             this.Serviceinfo = data.info;
             this.ServiceMeta = data.meta;
             yield this.bindRenderEvent();
