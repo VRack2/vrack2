@@ -4,6 +4,7 @@
   - [Создание ошибки](#создание-ошибки)
   - [Вложенные ошибки](#вложенные-ошибки)
   - [Экспорт и импорт ошибок](#экспорт-и-импорт-ошибок)
+  - [Хелперы](#хелперы)
 
 # Обработка ошибок
 
@@ -148,3 +149,24 @@ const restoredError = new CoreError(
 ```
 
 **Примечание:** Сериализованные ошибки безопасны для преобразования в JSON.
+
+## Хелперы
+
+Проверка, что ошибка является объектом `CoreError`: 
+
+```ts
+ErrorManager.isError(error: any): boolean
+```
+
+Проверка, что это конкретная ошибка:
+
+```ts
+ErrorManager.isCode(error: any, code: string): boolean
+```
+
+Поддерживает и код ошибки и строковую константу:
+
+```ts
+if (ErrorManager.isCode(error, 'qNOQIWHGFOIUsadjph')) {}
+if (ErrorManager.isCode(error, 'EM_ERROR_CONVERT')) {}
+```
