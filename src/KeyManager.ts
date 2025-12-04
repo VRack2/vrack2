@@ -41,7 +41,7 @@ export default class KeyManager extends Device {
     
     checkOptions(): { [key: string]: BasicType; } {
         return {
-            keysPath: Rule.string().require().default('./keys.json').description('Path to keys json file')
+            keysPath: Rule.string().required().default('./keys.json').description('Path to keys json file')
         }
     }
     
@@ -99,13 +99,13 @@ export default class KeyManager extends Device {
             icon: 'key-fill',
             handler: this.apiKeyAdd.bind(this),
             rules: { 
-                'level': Rule.number().require().example(3)
+                'level': Rule.number().required().example(3)
                     .description('Access level for new api key'),
-                'name': Rule.string().maxLength(200).require().example('testname')
+                'name': Rule.string().maxLength(200).required().example('testname')
                     .description('New name for key'),
                 'description': Rule.string().maxLength(2500).example('Test description key')
                     .description('New description for key'),
-                'cipher': Rule.boolean().require().example(false)
+                'cipher': Rule.boolean().required().example(false)
                     .description('Access level for new api key'),
             },
             return: Rule.object().fields({
@@ -127,9 +127,9 @@ export default class KeyManager extends Device {
             owner: this.type,
             handler: this.apiKeyUpdate.bind(this),
             rules: { 
-                'id': Rule.string().maxLength(200).require().example('caff46ebd619c872e4cf')
+                'id': Rule.string().maxLength(200).required().example('caff46ebd619c872e4cf')
                     .description('Unique key id, see apiKeyList command'),
-                'name': Rule.string().maxLength(200).require().example('testname')
+                'name': Rule.string().maxLength(200).required().example('testname')
                     .description('New name for key'),
                 'description': Rule.string().maxLength(2500).example('Test description key')
                     .description('New description for key'),
@@ -146,7 +146,7 @@ export default class KeyManager extends Device {
             icon: 'key',
             handler: this.apiKeyDelete.bind(this),
             rules: { 
-                'id': Rule.string().maxLength(200).require().example('caff46ebd619c872e4cf')
+                'id': Rule.string().maxLength(200).required().example('caff46ebd619c872e4cf')
                 .description('Unique key id, see apiKeyList command'),
             },
             return: Rule.string().default('success').description('Always return success string')

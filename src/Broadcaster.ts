@@ -32,7 +32,7 @@ export default class Broadcaster extends Device {
             owner: this.type,
             handler: this.apiChannelJoin.bind(this),
             return: Rule.string().default('success').description('Always returns success'),
-            rules: { 'channel': Rule.string().maxLength(200).require().example('path.to.channel').description('Channel path like a dot style') },
+            rules: { 'channel': Rule.string().maxLength(200).required().example('path.to.channel').description('Channel path like a dot style') },
         })
 
         this.ports.output['register.command'].push({
@@ -44,13 +44,13 @@ export default class Broadcaster extends Device {
             owner: this.type,
             handler: this.apiChannelLeave.bind(this),
             return: Rule.string().default('success').description('Always returns success'),
-            rules: { 'channel': Rule.string().maxLength(200).require().example('path.to.channel').description('Channel path like a dot style') },
+            rules: { 'channel': Rule.string().maxLength(200).required().example('path.to.channel').description('Channel path like a dot style') },
         })
     }
 
     checkOptions(): { [key: string]: BasicType; } {
         return {
-            'broadcastInputs': Rule.number().min(1).max(100).integer().require().default(8)
+            'broadcastInputs': Rule.number().min(1).max(100).integer().required().default(8)
         }
     }
 

@@ -49,7 +49,7 @@ class KeyManager extends vrack2_core_1.Device {
     }
     checkOptions() {
         return {
-            keysPath: vrack2_core_1.Rule.string().require().default('./keys.json').description('Path to keys json file')
+            keysPath: vrack2_core_1.Rule.string().required().default('./keys.json').description('Path to keys json file')
         };
     }
     process() {
@@ -95,13 +95,13 @@ class KeyManager extends vrack2_core_1.Device {
             icon: 'key-fill',
             handler: this.apiKeyAdd.bind(this),
             rules: {
-                'level': vrack2_core_1.Rule.number().require().example(3)
+                'level': vrack2_core_1.Rule.number().required().example(3)
                     .description('Access level for new api key'),
-                'name': vrack2_core_1.Rule.string().maxLength(200).require().example('testname')
+                'name': vrack2_core_1.Rule.string().maxLength(200).required().example('testname')
                     .description('New name for key'),
                 'description': vrack2_core_1.Rule.string().maxLength(2500).example('Test description key')
                     .description('New description for key'),
-                'cipher': vrack2_core_1.Rule.boolean().require().example(false)
+                'cipher': vrack2_core_1.Rule.boolean().required().example(false)
                     .description('Access level for new api key'),
             },
             return: vrack2_core_1.Rule.object().fields({
@@ -122,9 +122,9 @@ class KeyManager extends vrack2_core_1.Device {
             owner: this.type,
             handler: this.apiKeyUpdate.bind(this),
             rules: {
-                'id': vrack2_core_1.Rule.string().maxLength(200).require().example('caff46ebd619c872e4cf')
+                'id': vrack2_core_1.Rule.string().maxLength(200).required().example('caff46ebd619c872e4cf')
                     .description('Unique key id, see apiKeyList command'),
-                'name': vrack2_core_1.Rule.string().maxLength(200).require().example('testname')
+                'name': vrack2_core_1.Rule.string().maxLength(200).required().example('testname')
                     .description('New name for key'),
                 'description': vrack2_core_1.Rule.string().maxLength(2500).example('Test description key')
                     .description('New description for key'),
@@ -140,7 +140,7 @@ class KeyManager extends vrack2_core_1.Device {
             icon: 'key',
             handler: this.apiKeyDelete.bind(this),
             rules: {
-                'id': vrack2_core_1.Rule.string().maxLength(200).require().example('caff46ebd619c872e4cf')
+                'id': vrack2_core_1.Rule.string().maxLength(200).required().example('caff46ebd619c872e4cf')
                     .description('Unique key id, see apiKeyList command'),
             },
             return: vrack2_core_1.Rule.string().default('success').description('Always return success string')

@@ -56,15 +56,31 @@ export default class ServiceManager extends Device {
     }
   }
 
+  options!: { 
+    autoStart: boolean,
+    autoReload: boolean,
+    printErrors: boolean,
+    ignoreAutoReloadErrors: Array<string>,
+    servicesDirs: Array<{ dir: string, generate: boolean }>
+  };
+
   checkOptions(): { [key: string]: BasicType; } {
     return {
-      autoStart: Rule.boolean().default(true).require().description('Global control for autostart services at VRack start'),
-      autoReload: Rule.boolean().default(true).require().description('Global control for autoReload services if it crached'),
-      printErrors: Rule.boolean().default(true).require().description('Print errros if service is crashed'),
+      autoStart: Rule.boolean().default(true).required().description('Global control for autostart services at VRack start'),
+      autoReload: Rule.boolean().default(true).required().description('Global control for autoReload services if it crached'),
+      printErrors: Rule.boolean().default(true).required().description('Print errros if service is crashed'),
+      ignoreAutoReloadErrors: Rule.array().default([
+        'CTR_CONF_EXTENDS_PROBLEM',
+        'CTR_ERROR_INIT_DEVICE',
+        'CTR_DEVICE_PROCESS_EXCEPTION',
+        'CTR_DEVICE_PROCESS_PROMISE_EXCEPTION',
+        'CTR_ERROR_INIT_CONNECTION',
+        'CTR_IGNORE_SERVICE_AUTORELOAD'
+      ]).required().description('List of errors that the system ignores to restart the service'),
       servicesDirs: Rule.array().default([{ dir: './services', generate: true }]).content(
         Rule.object().fields({
-          dir: Rule.string().require().description('Service dir path'),
-          generate: Rule.boolean().default(true).require().description('Global control for generate  service from .js files'),
+          dir: Rule.string().required().description('Service dir path'),
+          generate: Rule.boolean().default(true).required().description('Global control for generate  service from .js files'),
         })
       ),
     }
@@ -141,7 +157,7 @@ export default class ServiceManager extends Device {
       icon: 'person-workspace',
       handler: this.apiService.bind(this),
       rules: { 
-        'service': Rule.string().maxLength(200).require().example('servid').description('Service unique id') 
+        'service': Rule.string().maxLength(200).required().example('servid').description('Service unique id') 
       },
       return: this.ServiceRule
     })
@@ -154,7 +170,7 @@ export default class ServiceManager extends Device {
       owner: this.type,
       icon: 'person-vcard-fill',
       handler: this.apiServiceMeta.bind(this),
-      rules: { 'service': Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+      rules: { 'service': Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
       return: Rule.object().fields({
         name: Rule.string().example('Lang name').description('Human service name'),
         group: Rule.string().example('Group name').description('Service group ()'),
@@ -197,7 +213,7 @@ export default class ServiceManager extends Device {
       owner: this.type,
       icon: 'play-circle-fill',
       handler: this.apiServiceStart.bind(this),
-      rules: { 'service': Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+      rules: { 'service': Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
       return: this.ServiceRule
     })
 
@@ -209,7 +225,7 @@ export default class ServiceManager extends Device {
       owner: this.type,
       icon: 'stop-circle-fill',
       handler: this.apiServiceStop.bind(this),
-      rules: { 'service': Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+      rules: { 'service': Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
       return: this.ServiceRule
     })
 
@@ -221,7 +237,7 @@ export default class ServiceManager extends Device {
       owner: this.type,
       icon: 'check-circle-fill',
       handler: this.apiServiceCheck.bind(this),
-      rules: { 'service': Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+      rules: { 'service': Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
       return: Rule.object().description('Empty object')
     })
 
@@ -233,7 +249,7 @@ export default class ServiceManager extends Device {
       owner: this.type,
       icon: 'sign-stop-fill',
       handler: this.apiServiceErrors.bind(this),
-      rules: { 'service': Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+      rules: { 'service': Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
       return: Rule.array().content(Rule.object().description('Error object')).description('Array of errors')
     })
 
@@ -245,7 +261,7 @@ export default class ServiceManager extends Device {
       owner: this.type,
       icon: 'trash-fill',
       handler: this.apiServiceErrorsClear.bind(this),
-      rules: { 'service': Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+      rules: { 'service': Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
       return: Rule.object().example({}).description('Empty object')
     })
 
@@ -311,19 +327,34 @@ export default class ServiceManager extends Device {
       onError: (error: any) => {
         // При ошибке проверяяем - можно ли перезапускать сервис
         if (this.servicesMeta[conf.id].autoReload && this.options.autoReload) conf.autoReload = true
+        // Нужно проверить - какая была ошибка, если ошибка входит в список игнорируемых
+        // То мы не разрешаем перезапуск сервиса Например при инициализации устройства
+        // error у нас всегда WM_INTERNAL_ERROR 
+        const cError = error as CoreError
+        // Нам нужна ошибка пониже
+        if (cError.vAddErrors.length && ErrorManager.isError(cError.vAddErrors[0])) {
+          // Для удобства сделаем ссылку на нее
+          const iError = cError.vAddErrors[0] as CoreError
+          // Если в списке игнорируемых ошибок есть наша ошибка - отключаем авторелоад
+          if (this.options.ignoreAutoReloadErrors.indexOf(iError.vShort) !== -1) conf.autoReload = false
+        }
         // Сообщяем об ошибке
         this.Container.emit('service.error', conf.id, error)
         // Добавляем ошибку 
         this.addError(conf.id, error)
       },
       onExit: () => {
+        // Удаляем активный вокрер
         delete this.servicesWorker[data.service]
+        // Говорим что сервис более не запущен
         conf.run = false
         this.broadcastUpdate([conf.id]) // Отправка всем изменений
+        // Если релоад отключен или таймер стоит по какой то причине уже то return
         if (!conf.autoReload || this.servicesTimer[conf.id] !== undefined) return
         // Если 
         this.servicesTimer[conf.id] = setTimeout(() => {
           this.servicesTimer[conf.id] = undefined
+          // Какой смысл это делать в try catch без await
           try {
             if (conf.run) return
             this.apiServiceStart(data)

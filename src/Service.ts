@@ -38,7 +38,7 @@ export default class Serivce extends Device {
 
     checkOptions(): { [key: string]: BasicType; } {
         return {
-            'mainProcessPath': Rule.string().require().default('vrack2-core.MainProcess').description('Main process class path'),
+            'mainProcessPath': Rule.string().required().default('vrack2-core.MainProcess').description('Main process class path'),
             'renderDelay': Rule.number().integer().min(10).max(3000).default(200).description('Minimal render delay for render shares'),
             'uncaughtTerminate': Rule.boolean().default(true).description('Terminate service if call uncaught exception'),
         }
@@ -131,7 +131,7 @@ export default class Serivce extends Device {
             owner: this.type,
             handler: this.apiServiceStart.bind(this),
             rules: {
-                service: Rule.string().maxLength(120).require().example('test-service').description('Service id'),
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
             },
         })
 
@@ -142,7 +142,7 @@ export default class Serivce extends Device {
             owner: this.type,
             handler: this.apiServiceCheck.bind(this),
             rules: {
-                service: Rule.string().maxLength(120).require().example('test-service').description('Service id'),
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
             },
         })
 
@@ -154,7 +154,7 @@ export default class Serivce extends Device {
             owner: this.type,
             handler: this.apiServiceShares.bind(this),
             rules: {
-                service: Rule.string().maxLength(120).require().example('test-service').description('Service id'),
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
             },
         })
 
@@ -165,10 +165,10 @@ export default class Serivce extends Device {
             owner: this.type,
             handler: this.apiServiceDeviceAction.bind(this),
             rules: {
-                service: Rule.string().maxLength(120).require().example('test-service').description('Service id'),
-                device: Rule.string().maxLength(120).require().example('DeviceID').description('Device id'),
-                action: Rule.string().maxLength(120).require().example('action.name').description('Action name (dot style!)'),
-                data: Rule.object().require().example({}).description('Data for push into action')
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+                action: Rule.string().maxLength(120).required().example('action.name').description('Action name (dot style!)'),
+                data: Rule.object().required().example({}).description('Data for push into action')
             },
         })
 
@@ -179,10 +179,10 @@ export default class Serivce extends Device {
             owner: this.type,
             handler: this.apiServiceDevicePush.bind(this),
             rules: {
-                service: Rule.string().maxLength(120).require().example('test-service').description('Service id'),
-                device: Rule.string().maxLength(120).require().example('DeviceID').description('Device id'),
-                port: Rule.string().maxLength(120).require().example('portname').description('Input port of device'),
-                data: Rule.object().require().example(1).description('Data for push into port')
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+                port: Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
+                data: Rule.object().required().example(1).description('Data for push into port')
             },
         })
 
@@ -193,9 +193,9 @@ export default class Serivce extends Device {
             owner: this.type,
             handler: this.apiServiceDeviceOutputListen.bind(this),
             rules: {
-                service: Rule.string().maxLength(120).require().example('test-service').description('Service id'),
-                device: Rule.string().maxLength(120).require().example('DeviceID').description('Device id'),
-                port: Rule.string().maxLength(120).require().example('portname').description('Input port of device'),
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+                port: Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
                 timeout: Rule.number().integer().min(0).max(20000).description('Timeout output listener')
             },
             return: Rule.string().example('any').description('Return a captured data')
@@ -217,7 +217,7 @@ export default class Serivce extends Device {
               short: Rule.string().example('Command list').description('Short description (3-5 words)'),
               icon: Rule.string().example('sd-card').description('Bootstrap icon (without bi- class only end like a "search","sd-card","share" & etc )'),
               return: Rule.object()
-                .example({ type: 'string', require: 'boolean', default: 'any', rules: 'Array of subrules', example:'any', description:'string' })
+                .example({ type: 'string', required: 'boolean', default: 'any', rules: 'Array of subrules', example:'any', description:'string' })
                 .description('Rule object of return type'),
             })).description('Array contain all command for this master'),
             handler: this.apiCommandList.bind(this),
@@ -232,11 +232,11 @@ export default class Serivce extends Device {
             icon: 'graph-up',
             handler: this.apiServiceDeviceMetric.bind(this),
             rules: {
-                service: Rule.string().maxLength(120).require().example('test-service').description('Service id'),
-                device: Rule.string().maxLength(120).require().example('DeviceID').description('Device id'),
-                metric: Rule.string().maxLength(120).require().example('metric.id').description('Device metric path'),
-                period: Rule.string().maxLength(120).require().example('now-1h:now').description('VRackDB period'),
-                precision: Rule.string().maxLength(60).require().example('30s').description('VRackDB precision'),
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+                metric: Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
+                period: Rule.string().maxLength(120).required().example('now-1h:now').description('VRackDB period'),
+                precision: Rule.string().maxLength(60).required().example('30s').description('VRackDB precision'),
                 func: Rule.string().default('last').maxLength(10).example('last').description('Read function (last,first,min,max,avg,sum)')
             },
             return: Rule.object().fields({
@@ -262,11 +262,11 @@ export default class Serivce extends Device {
             icon: 'graph-up',
             handler: this.apiServiceMetric.bind(this),
             rules: {
-                service: Rule.string().maxLength(120).require().example('test-service').description('Service id'),
-                device: Rule.string().maxLength(120).require().example('DeviceID').description('Device id'),
-                metric: Rule.string().maxLength(120).require().example('metric.id').description('Device metric path'),
-                period: Rule.string().maxLength(120).require().example('now-1h:now').description('VRackDB period'),
-                precision: Rule.string().maxLength(60).require().example('30s').description('VRackDB precision'),
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+                metric: Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
+                period: Rule.string().maxLength(120).required().example('now-1h:now').description('VRackDB period'),
+                precision: Rule.string().maxLength(60).required().example('30s').description('VRackDB precision'),
                 func: Rule.string().default('last').maxLength(10).example('last').description('Read function (last,first,min,max,avg,sum)')
             },
             return: Rule.object().fields({

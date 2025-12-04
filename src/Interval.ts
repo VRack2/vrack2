@@ -15,14 +15,14 @@ export default class Interval extends Device {
     actions(): { [key: string]: BasicAction; } {
         return {
             'test.action': Action.global().requirements({
-                id: Rule.string().require().default('www').description('Произвольный ID'),
-                list: Rule.array().require().content(
-                    Rule.array().require().content(
+                id: Rule.string().required().default('www').description('Произвольный ID'),
+                list: Rule.array().required().content(
+                    Rule.array().required().content(
                         Rule.string().default('').maxLength(24).description('Element of list')
                     )
                 ).description('Long long description'),
                 obj: Rule.object().fields({
-                    bool: Rule.boolean().require().default(true).description('Boolean checkbox')
+                    bool: Rule.boolean().required().default(true).description('Boolean checkbox')
                 }).description('TEst ibject description'),
             }).description('Тестовый запрос Action')
         }

@@ -38,9 +38,9 @@ class Master extends vrack2_core_1.Device {
     }
     checkOptions() {
         return {
-            commandPorts: vrack2_core_1.Rule.number().min(0).max(100).integer().default(8).require()
+            commandPorts: vrack2_core_1.Rule.number().min(0).max(100).integer().default(8).required()
                 .description('Count of ports for run command'),
-            registerPorts: vrack2_core_1.Rule.number().min(0).max(100).integer().default(8).require()
+            registerPorts: vrack2_core_1.Rule.number().min(0).max(100).integer().default(8).required()
                 .description('Count of ports for registers command')
         };
     }

@@ -85,7 +85,7 @@ class Serivce extends vrack2_core_1.Device {
     }
     checkOptions() {
         return {
-            'mainProcessPath': vrack2_core_1.Rule.string().require().default('vrack2-core.MainProcess').description('Main process class path'),
+            'mainProcessPath': vrack2_core_1.Rule.string().required().default('vrack2-core.MainProcess').description('Main process class path'),
             'renderDelay': vrack2_core_1.Rule.number().integer().min(10).max(3000).default(200).description('Minimal render delay for render shares'),
             'uncaughtTerminate': vrack2_core_1.Rule.boolean().default(true).description('Terminate service if call uncaught exception'),
         };
@@ -110,7 +110,7 @@ class Serivce extends vrack2_core_1.Device {
             owner: this.type,
             handler: this.apiServiceStart.bind(this),
             rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).require().example('test-service').description('Service id'),
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
             },
         });
         this.ports.output['register.command'].push({
@@ -120,7 +120,7 @@ class Serivce extends vrack2_core_1.Device {
             owner: this.type,
             handler: this.apiServiceCheck.bind(this),
             rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).require().example('test-service').description('Service id'),
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
             },
         });
         this.ports.output['register.command'].push({
@@ -130,7 +130,7 @@ class Serivce extends vrack2_core_1.Device {
             owner: this.type,
             handler: this.apiServiceShares.bind(this),
             rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).require().example('test-service').description('Service id'),
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
             },
         });
         this.ports.output['register.command'].push({
@@ -140,10 +140,10 @@ class Serivce extends vrack2_core_1.Device {
             owner: this.type,
             handler: this.apiServiceDeviceAction.bind(this),
             rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).require().example('test-service').description('Service id'),
-                device: vrack2_core_1.Rule.string().maxLength(120).require().example('DeviceID').description('Device id'),
-                action: vrack2_core_1.Rule.string().maxLength(120).require().example('action.name').description('Action name (dot style!)'),
-                data: vrack2_core_1.Rule.object().require().example({}).description('Data for push into action')
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+                action: vrack2_core_1.Rule.string().maxLength(120).required().example('action.name').description('Action name (dot style!)'),
+                data: vrack2_core_1.Rule.object().required().example({}).description('Data for push into action')
             },
         });
         this.ports.output['register.command'].push({
@@ -153,10 +153,10 @@ class Serivce extends vrack2_core_1.Device {
             owner: this.type,
             handler: this.apiServiceDevicePush.bind(this),
             rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).require().example('test-service').description('Service id'),
-                device: vrack2_core_1.Rule.string().maxLength(120).require().example('DeviceID').description('Device id'),
-                port: vrack2_core_1.Rule.string().maxLength(120).require().example('portname').description('Input port of device'),
-                data: vrack2_core_1.Rule.object().require().example(1).description('Data for push into port')
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+                port: vrack2_core_1.Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
+                data: vrack2_core_1.Rule.object().required().example(1).description('Data for push into port')
             },
         });
         this.ports.output['register.command'].push({
@@ -166,9 +166,9 @@ class Serivce extends vrack2_core_1.Device {
             owner: this.type,
             handler: this.apiServiceDeviceOutputListen.bind(this),
             rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).require().example('test-service').description('Service id'),
-                device: vrack2_core_1.Rule.string().maxLength(120).require().example('DeviceID').description('Device id'),
-                port: vrack2_core_1.Rule.string().maxLength(120).require().example('portname').description('Input port of device'),
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+                port: vrack2_core_1.Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
                 timeout: vrack2_core_1.Rule.number().integer().min(0).max(20000).description('Timeout output listener')
             },
             return: vrack2_core_1.Rule.string().example('any').description('Return a captured data')
@@ -189,7 +189,7 @@ class Serivce extends vrack2_core_1.Device {
                 short: vrack2_core_1.Rule.string().example('Command list').description('Short description (3-5 words)'),
                 icon: vrack2_core_1.Rule.string().example('sd-card').description('Bootstrap icon (without bi- class only end like a "search","sd-card","share" & etc )'),
                 return: vrack2_core_1.Rule.object()
-                    .example({ type: 'string', require: 'boolean', default: 'any', rules: 'Array of subrules', example: 'any', description: 'string' })
+                    .example({ type: 'string', required: 'boolean', default: 'any', rules: 'Array of subrules', example: 'any', description: 'string' })
                     .description('Rule object of return type'),
             })).description('Array contain all command for this master'),
             handler: this.apiCommandList.bind(this),
@@ -202,11 +202,11 @@ class Serivce extends vrack2_core_1.Device {
             icon: 'graph-up',
             handler: this.apiServiceDeviceMetric.bind(this),
             rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).require().example('test-service').description('Service id'),
-                device: vrack2_core_1.Rule.string().maxLength(120).require().example('DeviceID').description('Device id'),
-                metric: vrack2_core_1.Rule.string().maxLength(120).require().example('metric.id').description('Device metric path'),
-                period: vrack2_core_1.Rule.string().maxLength(120).require().example('now-1h:now').description('VRackDB period'),
-                precision: vrack2_core_1.Rule.string().maxLength(60).require().example('30s').description('VRackDB precision'),
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+                metric: vrack2_core_1.Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
+                period: vrack2_core_1.Rule.string().maxLength(120).required().example('now-1h:now').description('VRackDB period'),
+                precision: vrack2_core_1.Rule.string().maxLength(60).required().example('30s').description('VRackDB precision'),
                 func: vrack2_core_1.Rule.string().default('last').maxLength(10).example('last').description('Read function (last,first,min,max,avg,sum)')
             },
             return: vrack2_core_1.Rule.object().fields({
@@ -228,11 +228,11 @@ class Serivce extends vrack2_core_1.Device {
             icon: 'graph-up',
             handler: this.apiServiceMetric.bind(this),
             rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).require().example('test-service').description('Service id'),
-                device: vrack2_core_1.Rule.string().maxLength(120).require().example('DeviceID').description('Device id'),
-                metric: vrack2_core_1.Rule.string().maxLength(120).require().example('metric.id').description('Device metric path'),
-                period: vrack2_core_1.Rule.string().maxLength(120).require().example('now-1h:now').description('VRackDB period'),
-                precision: vrack2_core_1.Rule.string().maxLength(60).require().example('30s').description('VRackDB precision'),
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+                metric: vrack2_core_1.Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
+                period: vrack2_core_1.Rule.string().maxLength(120).required().example('now-1h:now').description('VRackDB period'),
+                precision: vrack2_core_1.Rule.string().maxLength(60).required().example('30s').description('VRackDB precision'),
                 func: vrack2_core_1.Rule.string().default('last').maxLength(10).example('last').description('Read function (last,first,min,max,avg,sum)')
             },
             return: vrack2_core_1.Rule.object().fields({

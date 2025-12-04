@@ -36,7 +36,7 @@ export default class DeviceWorker extends Device {
       icon: 'hdd-stack',
       handler: this.apiVendorDevices.bind(this),
       rules: {
-        vendor: Rule.string().maxLength(250).example('vrack').require().description('Vendor'),
+        vendor: Rule.string().maxLength(250).example('vrack').required().description('Vendor'),
       },
       return: Rule.array().content(
         Rule.string().example('DeviceName').description('Device name (device name of this vendor)')
@@ -52,8 +52,8 @@ export default class DeviceWorker extends Device {
       icon: 'hdd',
       handler: this.apiVendorDeviceInfo.bind(this),
       rules: {
-        vendor: Rule.string().maxLength(250).example('vrack').require().description('Vendor ID'),
-        device: Rule.string().maxLength(250).example('DeviceID').require().description('Device ID')
+        vendor: Rule.string().maxLength(250).example('vrack').required().description('Vendor ID'),
+        device: Rule.string().maxLength(250).example('DeviceID').required().description('Device ID')
       },
       return: Rule.object().fields({
         actions: Rule.object().description('Actions list - see IAction'),

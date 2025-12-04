@@ -12,6 +12,16 @@ export default class ServiceManager extends Device {
     inputs(): {
         [key: string]: BasicPort;
     };
+    options: {
+        autoStart: boolean;
+        autoReload: boolean;
+        printErrors: boolean;
+        ignoreAutoReloadErrors: Array<string>;
+        servicesDirs: Array<{
+            dir: string;
+            generate: boolean;
+        }>;
+    };
     checkOptions(): {
         [key: string]: BasicType;
     };

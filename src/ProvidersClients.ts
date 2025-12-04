@@ -46,7 +46,7 @@ export default class ProvidersClients extends Device {
 
     checkOptions(): { [key: string]: BasicType; } {
         return {
-            providers: Rule.number().require().integer().min(0).max(10)
+            providers: Rule.number().required().integer().min(0).max(10)
         }
     }
 

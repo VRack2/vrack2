@@ -39,7 +39,7 @@ class System extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'map-fill',
             handler: this.apiStructureGet.bind(this),
-            rules: { id: vrack2_core_1.Rule.string().require().example('vrack2').description('Container unique identify (see Container.id)') },
+            rules: { id: vrack2_core_1.Rule.string().required().example('vrack2').description('Container unique identify (see Container.id)') },
             return: vrack2_core_1.Rule.object().description('Container structure object - see IContainerStructure')
         });
         this.ports.output['register.command'].push({
@@ -51,8 +51,8 @@ class System extends vrack2_core_1.Device {
             icon: 'marker-tip',
             handler: this.apiStructureUpdate.bind(this),
             rules: {
-                id: vrack2_core_1.Rule.string().require().example('vrack2').description('Container unique identify (see Container.id)'),
-                structure: vrack2_core_1.Rule.object().require().description('New Structure - see IContainerStructure')
+                id: vrack2_core_1.Rule.string().required().example('vrack2').description('Container unique identify (see Container.id)'),
+                structure: vrack2_core_1.Rule.object().required().description('New Structure - see IContainerStructure')
             },
         });
         this.ports.output['register.command'].push({
@@ -64,11 +64,11 @@ class System extends vrack2_core_1.Device {
             icon: 'graph-up',
             handler: this.apiSystemMetric.bind(this),
             rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).default('not used').require().description('Service id (not used for this action)'),
-                device: vrack2_core_1.Rule.string().maxLength(120).example('DeviceID').require().description('Device id'),
-                metric: vrack2_core_1.Rule.string().maxLength(120).example('metric.id').require().description('Device metric path'),
-                period: vrack2_core_1.Rule.string().maxLength(120).example('start:end').require().description('VRackDB period'),
-                precision: vrack2_core_1.Rule.string().maxLength(60).require().example('400').description('VRackDB precision'),
+                service: vrack2_core_1.Rule.string().maxLength(120).default('not used').required().description('Service id (not used for this action)'),
+                device: vrack2_core_1.Rule.string().maxLength(120).example('DeviceID').required().description('Device id'),
+                metric: vrack2_core_1.Rule.string().maxLength(120).example('metric.id').required().description('Device metric path'),
+                period: vrack2_core_1.Rule.string().maxLength(120).example('start:end').required().description('VRackDB period'),
+                precision: vrack2_core_1.Rule.string().maxLength(60).required().example('400').description('VRackDB precision'),
                 func: vrack2_core_1.Rule.string().default('last').maxLength(10).description('Read function (last,first,min,max,avg,sum)')
             },
             return: vrack2_core_1.Rule.object().fields({

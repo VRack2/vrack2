@@ -40,7 +40,7 @@ class ProvidersClients extends vrack2_core_1.Device {
     }
     checkOptions() {
         return {
-            providers: vrack2_core_1.Rule.number().require().integer().min(0).max(10)
+            providers: vrack2_core_1.Rule.number().required().integer().min(0).max(10)
         };
     }
     preProcess() {

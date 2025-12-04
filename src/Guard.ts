@@ -14,8 +14,8 @@ import IApiKey from "./interfaces/IApiKey";
 ErrorManager.register(
     'Guard', 'BJZHVPRFLTUS', 'GUARD_CLIENT_NOT_REGISTERED',
     'Somehow it happened that the client was not registered, but a request came from him.', {
-    providerId: Rule.number().min(0).integer().require(),
-    clientId: Rule.number().min(0).integer().require()
+    providerId: Rule.number().min(0).integer().required(),
+    clientId: Rule.number().min(0).integer().required()
 })
 
 ErrorManager.register(
@@ -88,7 +88,7 @@ export default class Guard extends Device {
 
     checkOptions(): { [key: string]: BasicType; } {
         return {
-            // providers: Rule.number().require().integer().min(0).max(10)
+            // providers: Rule.number().required().integer().min(0).max(10)
         }
     }
 

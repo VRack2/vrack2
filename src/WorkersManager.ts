@@ -33,7 +33,7 @@ export default class WorkersManager extends Device {
     inputs(): { [key: string]: BasicPort; } {
         return {
             'worker%d.add': Port.return().requirement(
-                Rule.object().require().fields({
+                Rule.object().required().fields({
                     data: Rule.object().description('Data for sending to worker at start'),
                     onError: Rule.function().description('On error callback'),
                     onExit: Rule.function().description('On onExit callback')
@@ -43,13 +43,13 @@ export default class WorkersManager extends Device {
             .description('Add new worker'),
 
             'worker%d.stop': Port.return().requirement(
-                Rule.object().require().fields({
+                Rule.object().required().fields({
                     id: Rule.object().description('Worker ID'),
                 }))
             .dynamic(this.options.workerInputs)
             .description('Stop worker port'),
 
-            'worker%d.request': Port.return().requirement(Rule.object().require().fields({
+            'worker%d.request': Port.return().requirement(Rule.object().required().fields({
                 id: Rule.object().description('Worker ID'),
             }))
             .dynamic(this.options.workerInputs)

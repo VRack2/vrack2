@@ -22,8 +22,8 @@ export default class WSProvider extends Device {
 
   checkOptions(): { [key: string]: BasicType; } {
     return {
-      port: Rule.number().require().integer().default(4044).min(0).description('Websocket server port'),
-      host: Rule.string().require().default('').description('Websocket server host')
+      port: Rule.number().required().integer().default(4044).min(0).description('Websocket server port'),
+      host: Rule.string().required().default('').description('Websocket server host')
     }
   }
 

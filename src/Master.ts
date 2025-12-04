@@ -71,9 +71,9 @@ export default class Master extends Device {
 
   checkOptions(): { [key: string]: BasicType; } {
     return {
-      commandPorts: Rule.number().min(0).max(100).integer().default(8).require()
+      commandPorts: Rule.number().min(0).max(100).integer().default(8).required()
         .description('Count of ports for run command'),
-      registerPorts: Rule.number().min(0).max(100).integer().default(8).require()
+      registerPorts: Rule.number().min(0).max(100).integer().default(8).required()
         .description('Count of ports for registers command')
     }
   }

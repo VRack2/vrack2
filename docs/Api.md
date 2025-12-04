@@ -14,6 +14,10 @@
 
 Нажав в на нужную команду - отобразится документация на нее.
 
+## Рекомендации
+
+- Используйте официальную библиотеку [`vrack2-remote`](https://github.com/VRack2/vrack2-remote) для упрощения работы.
+
 ## Подключение
 
 Сервер VRack2 слушает WebSocket-соединения по адресу:  
@@ -217,7 +221,3 @@ function decipherData(encryptedData, privateKey, key) {
         "clientId":3
     }
 ```
-
-## Рекомендации
-
-- Используйте официальную библиотеку [`vrack2-remote`](https://github.com/VRack2/vrack2-remote) для упрощения работы.

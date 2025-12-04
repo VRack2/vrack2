@@ -53,8 +53,8 @@ class WSProvider extends vrack2_core_1.Device {
     }
     checkOptions() {
         return {
-            port: vrack2_core_1.Rule.number().require().integer().default(4044).min(0).description('Websocket server port'),
-            host: vrack2_core_1.Rule.string().require().default('').description('Websocket server host')
+            port: vrack2_core_1.Rule.number().required().integer().default(4044).min(0).description('Websocket server port'),
+            host: vrack2_core_1.Rule.string().required().default('').description('Websocket server host')
         };
     }
     metrics() {

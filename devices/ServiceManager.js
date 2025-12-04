@@ -105,12 +105,20 @@ class ServiceManager extends vrack2_core_1.Device {
     }
     checkOptions() {
         return {
-            autoStart: vrack2_core_1.Rule.boolean().default(true).require().description('Global control for autostart services at VRack start'),
-            autoReload: vrack2_core_1.Rule.boolean().default(true).require().description('Global control for autoReload services if it crached'),
-            printErrors: vrack2_core_1.Rule.boolean().default(true).require().description('Print errros if service is crashed'),
+            autoStart: vrack2_core_1.Rule.boolean().default(true).required().description('Global control for autostart services at VRack start'),
+            autoReload: vrack2_core_1.Rule.boolean().default(true).required().description('Global control for autoReload services if it crached'),
+            printErrors: vrack2_core_1.Rule.boolean().default(true).required().description('Print errros if service is crashed'),
+            ignoreAutoReloadErrors: vrack2_core_1.Rule.array().default([
+                'CTR_CONF_EXTENDS_PROBLEM',
+                'CTR_ERROR_INIT_DEVICE',
+                'CTR_DEVICE_PROCESS_EXCEPTION',
+                'CTR_DEVICE_PROCESS_PROMISE_EXCEPTION',
+                'CTR_ERROR_INIT_CONNECTION',
+                'CTR_IGNORE_SERVICE_AUTORELOAD'
+            ]).required().description('List of errors that the system ignores to restart the service'),
             servicesDirs: vrack2_core_1.Rule.array().default([{ dir: './services', generate: true }]).content(vrack2_core_1.Rule.object().fields({
-                dir: vrack2_core_1.Rule.string().require().description('Service dir path'),
-                generate: vrack2_core_1.Rule.boolean().default(true).require().description('Global control for generate  service from .js files'),
+                dir: vrack2_core_1.Rule.string().required().description('Service dir path'),
+                generate: vrack2_core_1.Rule.boolean().default(true).required().description('Global control for generate  service from .js files'),
             })),
         };
     }
@@ -124,7 +132,7 @@ class ServiceManager extends vrack2_core_1.Device {
             icon: 'person-workspace',
             handler: this.apiService.bind(this),
             rules: {
-                'service': vrack2_core_1.Rule.string().maxLength(200).require().example('servid').description('Service unique id')
+                'service': vrack2_core_1.Rule.string().maxLength(200).required().example('servid').description('Service unique id')
             },
             return: this.ServiceRule
         });
@@ -136,7 +144,7 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'person-vcard-fill',
             handler: this.apiServiceMeta.bind(this),
-            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
             return: vrack2_core_1.Rule.object().fields({
                 name: vrack2_core_1.Rule.string().example('Lang name').description('Human service name'),
                 group: vrack2_core_1.Rule.string().example('Group name').description('Service group ()'),
@@ -176,7 +184,7 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'play-circle-fill',
             handler: this.apiServiceStart.bind(this),
-            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
             return: this.ServiceRule
         });
         this.ports.output['register.command'].push({
@@ -187,7 +195,7 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'stop-circle-fill',
             handler: this.apiServiceStop.bind(this),
-            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
             return: this.ServiceRule
         });
         this.ports.output['register.command'].push({
@@ -198,7 +206,7 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'check-circle-fill',
             handler: this.apiServiceCheck.bind(this),
-            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
             return: vrack2_core_1.Rule.object().description('Empty object')
         });
         this.ports.output['register.command'].push({
@@ -209,7 +217,7 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'sign-stop-fill',
             handler: this.apiServiceErrors.bind(this),
-            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
             return: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().description('Error object')).description('Array of errors')
         });
         this.ports.output['register.command'].push({
@@ -220,7 +228,7 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'trash-fill',
             handler: this.apiServiceErrorsClear.bind(this),
-            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).require().example('servid').description('Service unique id') },
+            rules: { 'service': vrack2_core_1.Rule.string().maxLength(200).required().example('servid').description('Service unique id') },
             return: vrack2_core_1.Rule.object().example({}).description('Empty object')
         });
     }
@@ -291,20 +299,36 @@ class ServiceManager extends vrack2_core_1.Device {
                     // При ошибке проверяяем - можно ли перезапускать сервис
                     if (this.servicesMeta[conf.id].autoReload && this.options.autoReload)
                         conf.autoReload = true;
+                    // Нужно проверить - какая была ошибка, если ошибка входит в список игнорируемых
+                    // То мы не разрешаем перезапуск сервиса Например при инициализации устройства
+                    // error у нас всегда WM_INTERNAL_ERROR 
+                    const cError = error;
+                    // Нам нужна ошибка пониже
+                    if (cError.vAddErrors.length && vrack2_core_1.ErrorManager.isError(cError.vAddErrors[0])) {
+                        // Для удобства сделаем ссылку на нее
+                        const iError = cError.vAddErrors[0];
+                        // Если в списке игнорируемых ошибок есть наша ошибка - отключаем авторелоад
+                        if (this.options.ignoreAutoReloadErrors.indexOf(iError.vShort) !== -1)
+                            conf.autoReload = false;
+                    }
                     // Сообщяем об ошибке
                     this.Container.emit('service.error', conf.id, error);
                     // Добавляем ошибку 
                     this.addError(conf.id, error);
                 },
                 onExit: () => {
+                    // Удаляем активный вокрер
                     delete this.servicesWorker[data.service];
+                    // Говорим что сервис более не запущен
                     conf.run = false;
                     this.broadcastUpdate([conf.id]); // Отправка всем изменений
+                    // Если релоад отключен или таймер стоит по какой то причине уже то return
                     if (!conf.autoReload || this.servicesTimer[conf.id] !== undefined)
                         return;
                     // Если 
                     this.servicesTimer[conf.id] = setTimeout(() => {
                         this.servicesTimer[conf.id] = undefined;
+                        // Какой смысл это делать в try catch без await
                         try {
                             if (conf.run)
                                 return;

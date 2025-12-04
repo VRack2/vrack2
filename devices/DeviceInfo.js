@@ -44,7 +44,7 @@ class DeviceInfo extends vrack2_core_1.Device {
             icon: 'hdd-stack',
             handler: this.apiVendorDevices.bind(this),
             rules: {
-                vendor: vrack2_core_1.Rule.string().maxLength(250).example('vrack').require().description('Vendor'),
+                vendor: vrack2_core_1.Rule.string().maxLength(250).example('vrack').required().description('Vendor'),
             },
             return: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.string().example('DeviceName').description('Device name (device name of this vendor)')).description('Array of device list')
         });
@@ -57,8 +57,8 @@ class DeviceInfo extends vrack2_core_1.Device {
             icon: 'hdd',
             handler: this.apiVendorDeviceInfo.bind(this),
             rules: {
-                vendor: vrack2_core_1.Rule.string().maxLength(250).example('vrack').require().description('Vendor ID'),
-                device: vrack2_core_1.Rule.string().maxLength(250).example('DeviceID').require().description('Device ID')
+                vendor: vrack2_core_1.Rule.string().maxLength(250).example('vrack').required().description('Vendor ID'),
+                device: vrack2_core_1.Rule.string().maxLength(250).example('DeviceID').required().description('Device ID')
             },
             return: vrack2_core_1.Rule.object().fields({
                 actions: vrack2_core_1.Rule.object().description('Actions list - see IAction'),

@@ -18,7 +18,7 @@ class InterService extends vrack2_core_1.Device {
     }
     checkOptions() {
         return {
-            inputs: vrack2_core_1.Rule.number().integer().min(0).default(1).require().description('Count input command ports')
+            inputs: vrack2_core_1.Rule.number().integer().min(0).default(1).required().description('Count input command ports')
         };
     }
     preProcess() {

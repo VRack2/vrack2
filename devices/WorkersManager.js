@@ -40,19 +40,19 @@ class WorkersManager extends vrack2_core_1.Device {
     }
     inputs() {
         return {
-            'worker%d.add': vrack2_core_1.Port.return().requirement(vrack2_core_1.Rule.object().require().fields({
+            'worker%d.add': vrack2_core_1.Port.return().requirement(vrack2_core_1.Rule.object().required().fields({
                 data: vrack2_core_1.Rule.object().description('Data for sending to worker at start'),
                 onError: vrack2_core_1.Rule.function().description('On error callback'),
                 onExit: vrack2_core_1.Rule.function().description('On onExit callback')
             }))
                 .dynamic(this.options.workerInputs)
                 .description('Add new worker'),
-            'worker%d.stop': vrack2_core_1.Port.return().requirement(vrack2_core_1.Rule.object().require().fields({
+            'worker%d.stop': vrack2_core_1.Port.return().requirement(vrack2_core_1.Rule.object().required().fields({
                 id: vrack2_core_1.Rule.object().description('Worker ID'),
             }))
                 .dynamic(this.options.workerInputs)
                 .description('Stop worker port'),
-            'worker%d.request': vrack2_core_1.Port.return().requirement(vrack2_core_1.Rule.object().require().fields({
+            'worker%d.request': vrack2_core_1.Port.return().requirement(vrack2_core_1.Rule.object().required().fields({
                 id: vrack2_core_1.Rule.object().description('Worker ID'),
             }))
                 .dynamic(this.options.workerInputs)

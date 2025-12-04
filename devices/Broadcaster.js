@@ -68,7 +68,7 @@ class Broadcaster extends vrack2_core_1.Device {
             owner: this.type,
             handler: this.apiChannelJoin.bind(this),
             return: vrack2_core_1.Rule.string().default('success').description('Always returns success'),
-            rules: { 'channel': vrack2_core_1.Rule.string().maxLength(200).require().example('path.to.channel').description('Channel path like a dot style') },
+            rules: { 'channel': vrack2_core_1.Rule.string().maxLength(200).required().example('path.to.channel').description('Channel path like a dot style') },
         });
         this.ports.output['register.command'].push({
             command: 'channelLeave',
@@ -79,12 +79,12 @@ class Broadcaster extends vrack2_core_1.Device {
             owner: this.type,
             handler: this.apiChannelLeave.bind(this),
             return: vrack2_core_1.Rule.string().default('success').description('Always returns success'),
-            rules: { 'channel': vrack2_core_1.Rule.string().maxLength(200).require().example('path.to.channel').description('Channel path like a dot style') },
+            rules: { 'channel': vrack2_core_1.Rule.string().maxLength(200).required().example('path.to.channel').description('Channel path like a dot style') },
         });
     }
     checkOptions() {
         return {
-            'broadcastInputs': vrack2_core_1.Rule.number().min(1).max(100).integer().require().default(8)
+            'broadcastInputs': vrack2_core_1.Rule.number().min(1).max(100).integer().required().default(8)
         };
     }
     preProcess() {

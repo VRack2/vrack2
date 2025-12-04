@@ -15,8 +15,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
 const crypto_1 = __importDefault(require("crypto"));
 vrack2_core_1.ErrorManager.register('Guard', 'BJZHVPRFLTUS', 'GUARD_CLIENT_NOT_REGISTERED', 'Somehow it happened that the client was not registered, but a request came from him.', {
-    providerId: vrack2_core_1.Rule.number().min(0).integer().require(),
-    clientId: vrack2_core_1.Rule.number().min(0).integer().require()
+    providerId: vrack2_core_1.Rule.number().min(0).integer().required(),
+    clientId: vrack2_core_1.Rule.number().min(0).integer().required()
 });
 vrack2_core_1.ErrorManager.register('Guard', 'CDCQSCNGOONF', 'GUARD_INCORRECT_CLIENT_JSON', 'The client sent data in the request that does not comply with the json format.', {
     err: vrack2_core_1.Rule.string().description('Error message')
@@ -52,7 +52,7 @@ class Guard extends vrack2_core_1.Device {
     }
     checkOptions() {
         return {
-        // providers: Rule.number().require().integer().min(0).max(10)
+        // providers: Rule.number().required().integer().min(0).max(10)
         };
     }
     process() {

@@ -27,7 +27,7 @@ export default class InterService extends Device {
 
     checkOptions(): { [key: string]: BasicType; } {
         return {
-            inputs: Rule.number().integer().min(0).default(1).require().description('Count input command ports')
+            inputs: Rule.number().integer().min(0).default(1).required().description('Count input command ports')
         }
     }
 

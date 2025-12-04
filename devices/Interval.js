@@ -25,10 +25,10 @@ class Interval extends vrack2_core_1.Device {
     actions() {
         return {
             'test.action': vrack2_core_1.Action.global().requirements({
-                id: vrack2_core_1.Rule.string().require().default('www').description('Произвольный ID'),
-                list: vrack2_core_1.Rule.array().require().content(vrack2_core_1.Rule.array().require().content(vrack2_core_1.Rule.string().default('').maxLength(24).description('Element of list'))).description('Long long description'),
+                id: vrack2_core_1.Rule.string().required().default('www').description('Произвольный ID'),
+                list: vrack2_core_1.Rule.array().required().content(vrack2_core_1.Rule.array().required().content(vrack2_core_1.Rule.string().default('').maxLength(24).description('Element of list'))).description('Long long description'),
                 obj: vrack2_core_1.Rule.object().fields({
-                    bool: vrack2_core_1.Rule.boolean().require().default(true).description('Boolean checkbox')
+                    bool: vrack2_core_1.Rule.boolean().required().default(true).description('Boolean checkbox')
                 }).description('TEst ibject description'),
             }).description('Тестовый запрос Action')
         };
