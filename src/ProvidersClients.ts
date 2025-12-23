@@ -54,9 +54,9 @@ export default class ProvidersClients extends Device {
         for (let i = 1; i <= this.options.providers; i++)
         {   
             this.providers[i] = {}
-            this[('inputClient' + i + 'Command') as keyof ProvidersClients] = (data: IProviderMessage) =>  this.inputClientCommand(data, i )
-            this[('inputClient' + i + 'Register') as keyof ProvidersClients] = (data: IRegisterProviderClient) => this.inputClientRegister(data, i )
-            this[('inputClient' + i + 'Unregister') as keyof ProvidersClients] = (data: IUnregisterProviderClient) => this.inputClientUnregister(data, i )
+            this.addInputHandler('inputClient' + i + 'Command', (data: IProviderMessage) =>  this.inputClientCommand(data, i ))
+            this.addInputHandler('inputClient' + i + 'Register', (data: IRegisterProviderClient) => this.inputClientRegister(data, i ) )
+            this.addInputHandler('inputClient' + i + 'Unregister', (data: IUnregisterProviderClient) => this.inputClientUnregister(data, i ))
         }
     }
     
