@@ -156,7 +156,7 @@ class Serivce extends vrack2_core_1.Device {
                 service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
                 device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
                 port: vrack2_core_1.Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
-                data: vrack2_core_1.Rule.object().required().example(1).description('Data for push into port')
+                data: vrack2_core_1.Rule.any().required().example(1).description('Data for push into port')
             },
         });
         this.ports.output['register.command'].push({

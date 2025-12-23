@@ -182,7 +182,7 @@ export default class Serivce extends Device {
                 service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
                 device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
                 port: Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
-                data: Rule.object().required().example(1).description('Data for push into port')
+                data: Rule.any().required().example(1).description('Data for push into port')
             },
         })
 
