@@ -46,9 +46,9 @@ class ProvidersClients extends vrack2_core_1.Device {
     preProcess() {
         for (let i = 1; i <= this.options.providers; i++) {
             this.providers[i] = {};
-            this.addInputHandler('inputClient' + i + 'Command', (data) => this.inputClientCommand(data, i));
-            this.addInputHandler('inputClient' + i + 'Register', (data) => this.inputClientRegister(data, i));
-            this.addInputHandler('inputClient' + i + 'Unregister', (data) => this.inputClientUnregister(data, i));
+            this.addInputHandler('client' + i + '.Command', (data) => this.inputClientCommand(data, i));
+            this.addInputHandler('client' + i + '.Register', (data) => this.inputClientRegister(data, i));
+            this.addInputHandler('client' + i + '.Unregister', (data) => this.inputClientUnregister(data, i));
         }
     }
     /**
