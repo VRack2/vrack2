@@ -1,9 +1,8 @@
-import { CoreError, Device, ErrorManager, Port, Rule } from "vrack2-core";
+import { CoreError, Device, ErrorManager, Port, Rule, UniversalWorker } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
-import { parentPort } from "worker_threads"
 import IGuardMessage from "./interfaces/IGuardMessage";
-import { workerData, threadId } from "worker_threads"
+// import { workerData, threadId } from "worker_threads"
 
 interface IInternalMessage extends IGuardMessage {
     internal?: boolean;
@@ -40,7 +39,8 @@ export default class WorkerProvider extends Device {
     process(): void {
         // Bind loaded method for send signal to service manager
         this.Container.on('loaded', this.loaded.bind(this))
-        parentPort?.on('message', this.inputCommand.bind(this))
+        UniversalWorker.onMessage(this.inputCommand.bind(this))
+        // parentPort?.on('message', this.inputCommand.bind(this))
     }
 
     /**
@@ -115,6 +115,7 @@ export default class WorkerProvider extends Device {
      * Send data to ServiceManager after service loaded
     */
     protected loaded() {
+        const workerData = UniversalWorker.getWorkerData()
         this.inputSend({
             __index: workerData.__index,
             __id: workerData.__id,
@@ -148,6 +149,7 @@ export default class WorkerProvider extends Device {
      * Send raw data to parentPort
     */
     protected postMessage(data: any) {
-        parentPort?.postMessage(data)
+        UniversalWorker.sendMessage(data)
+        // parentPort?.postMessage(data)
     }
 }

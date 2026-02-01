@@ -66,6 +66,7 @@ class ServiceManager extends vrack2_core_1.Device {
             system: false,
             autoStart: false,
             autoReload: false,
+            isolated: false,
         };
         /**
          * Очередь для отслеживание и перегенерации файлов сервисов
@@ -293,6 +294,8 @@ class ServiceManager extends vrack2_core_1.Device {
             conf.autoReload = false;
             // Запуск воркера
             this.servicesWorker[data.service] = yield this.ports.output['worker.add'].push({
+                // Является ли данный сервис изолированным
+                isolated: this.servicesMeta[conf.id].isolated,
                 // Данные workerData которые будут переданы в новый процесс
                 data: this.serviceWorkerData(conf, 'worker'),
                 onError: (error) => {

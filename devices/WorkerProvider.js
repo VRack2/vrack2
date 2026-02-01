@@ -10,8 +10,6 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
-const worker_threads_1 = require("worker_threads");
-const worker_threads_2 = require("worker_threads");
 vrack2_core_1.ErrorManager.register('WorkerProvider', 'O0LWU331YS7J', 'WP_INTERNAL_COMMAND_ERROR', 'An error occurred while executing an internal command that the service sent to VRACK.');
 class WorkerProvider extends vrack2_core_1.Device {
     constructor() {
@@ -37,7 +35,8 @@ class WorkerProvider extends vrack2_core_1.Device {
     process() {
         // Bind loaded method for send signal to service manager
         this.Container.on('loaded', this.loaded.bind(this));
-        worker_threads_1.parentPort === null || worker_threads_1.parentPort === void 0 ? void 0 : worker_threads_1.parentPort.on('message', this.inputCommand.bind(this));
+        vrack2_core_1.UniversalWorker.onMessage(this.inputCommand.bind(this));
+        // parentPort?.on('message', this.inputCommand.bind(this))
     }
     /**
      * Receiving and processing a command from the main VRack2 service
@@ -112,10 +111,11 @@ class WorkerProvider extends vrack2_core_1.Device {
      * Send data to ServiceManager after service loaded
     */
     loaded() {
+        const workerData = vrack2_core_1.UniversalWorker.getWorkerData();
         this.inputSend({
-            __index: worker_threads_2.workerData.__index,
-            __id: worker_threads_2.workerData.__id,
-            resultData: worker_threads_2.workerData.__id
+            __index: workerData.__index,
+            __id: workerData.__id,
+            resultData: workerData.__id
         });
     }
     /**
@@ -147,7 +147,8 @@ class WorkerProvider extends vrack2_core_1.Device {
      * Send raw data to parentPort
     */
     postMessage(data) {
-        worker_threads_1.parentPort === null || worker_threads_1.parentPort === void 0 ? void 0 : worker_threads_1.parentPort.postMessage(data);
+        vrack2_core_1.UniversalWorker.sendMessage(data);
+        // parentPort?.postMessage(data)
     }
 }
 exports.default = WorkerProvider;

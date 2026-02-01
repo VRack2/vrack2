@@ -9,9 +9,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-const path_1 = require("path");
 const vrack2_core_1 = require("vrack2-core");
-const worker_threads_1 = require("worker_threads");
+const path_1 = require("path");
 vrack2_core_1.ErrorManager.register('WorkersManager', 'ASF6TC4U7J6P', 'WM_INTERNAL_ERROR', 'An error occurred within the service being used, causing it to terminate.');
 vrack2_core_1.ErrorManager.register('WorkersManager', 'U4HUK15C0UVO', 'WM_WORKER_EXIT', 'The workers job was terminated, all tasks were deleted.');
 class WorkersManager extends vrack2_core_1.Device {
@@ -96,15 +95,21 @@ class WorkersManager extends vrack2_core_1.Device {
             this.workersQueue[id] = [];
             data.data.__index = index;
             data.data.__id = id;
-            const nWorker = new worker_threads_1.Worker(this.options.workderIndexPath, { workerData: data.data });
+            const nWorker = new vrack2_core_1.UniversalWorker({
+                isolated: data.isolated,
+                scriptPath: this.options.workderIndexPath,
+                workerData: data.data
+            });
             this.workers.set(id, nWorker);
             nWorker.on('message', (mData) => {
                 if (mData.internal)
                     return this.internal(id, mData);
                 if (mData.command === 'broadcast')
                     return this.ports.output['broadcast'].push(mData);
-                if (mData.command === 'error')
-                    return nWorker.emit('error', vrack2_core_1.ErrorManager.make('WM_INTERNAL_ERROR').add(mData.error));
+                if (mData.command === 'error') {
+                    data.onError(vrack2_core_1.ErrorManager.make('WM_INTERNAL_ERROR').add(mData.error));
+                    return;
+                }
                 if (mData.__index && this.Queue.has(mData.__index))
                     return this.queueMaintenance(id, mData);
             });
@@ -172,7 +177,7 @@ class WorkersManager extends vrack2_core_1.Device {
                 data.data.__index = index;
                 if (!this.workers.get(data.id))
                     throw vrack2_core_1.ErrorManager.make('WM_WORKER_EXIT');
-                (_a = this.workers.get(data.id)) === null || _a === void 0 ? void 0 : _a.postMessage(data.data);
+                (_a = this.workers.get(data.id)) === null || _a === void 0 ? void 0 : _a.send(data.data);
             }
             catch (error) {
                 this.Queue.delete(index);
@@ -223,7 +228,7 @@ class WorkersManager extends vrack2_core_1.Device {
                 data.resultData = vrack2_core_1.CoreError.objectify(error);
                 data.result = 'error';
             }
-            (_a = this.workers.get(id)) === null || _a === void 0 ? void 0 : _a.postMessage(data);
+            (_a = this.workers.get(id)) === null || _a === void 0 ? void 0 : _a.send(data);
         });
     }
     /**

@@ -3,7 +3,7 @@ import { Bootstrap, Container, CoreError, Device, DeviceMetrics, ErrorManager, I
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 
-import { workerData, threadId } from "worker_threads"
+import { threadId } from "worker_threads"
 
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from './interfaces/IServiceConfig';
@@ -90,7 +90,7 @@ export default class Serivce extends Device {
     */
     ServiceMeta: IServiceMeta = {
         name: '', group: '', description: '',
-        system: false, autoStart: false, autoReload: false
+        system: false, autoStart: false, autoReload: false, isolated: false
     }
 
 

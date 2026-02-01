@@ -14,4 +14,6 @@ export default interface IServiceMeta {
     autoStart: boolean;
     /** Auto reload service if him crashed */
     autoReload: boolean;
+    /** Требуется ли сервису изоляция от основного процесса */
+    isolated: boolean;
 }

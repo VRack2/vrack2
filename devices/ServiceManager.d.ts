@@ -119,7 +119,7 @@ export default class ServiceManager extends Device {
     */
     apiServiceStop(data: {
         service: string;
-    }): Promise<"success" | IServiceConfig>;
+    }): Promise<IServiceConfig | "success">;
     /***
      * Проверка сервиса
      *

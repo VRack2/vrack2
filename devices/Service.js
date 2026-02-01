@@ -49,7 +49,7 @@ class Serivce extends vrack2_core_1.Device {
         */
         this.ServiceMeta = {
             name: '', group: '', description: '',
-            system: false, autoStart: false, autoReload: false
+            system: false, autoStart: false, autoReload: false, isolated: false
         };
         /***
          * Render pull for service shares data

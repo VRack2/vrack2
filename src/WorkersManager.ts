@@ -1,10 +1,12 @@
+import { CoreError, Device, ErrorManager, Port, Rule, UniversalWorker } from "vrack2-core";
 import { join } from "path";
-import { CoreError, Device, ErrorManager, Port, Rule } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 import { Worker } from "worker_threads";
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IBroadcast from "./interfaces/IBroadcast";
+
+
 
 ErrorManager.register('WorkersManager','ASF6TC4U7J6P', 'WM_INTERNAL_ERROR', 'An error occurred within the service being used, causing it to terminate.')
 ErrorManager.register('WorkersManager','U4HUK15C0UVO', 'WM_WORKER_EXIT', 'The workers job was terminated, all tasks were deleted.')
@@ -88,7 +90,7 @@ export default class WorkersManager extends Device {
     /**
      * List of workers
     */
-    private workers = new Map<number, Worker>()
+    private workers = new Map<number, UniversalWorker>()
 
     /**
      * Contains a list of messages that are queued for a particular worker
@@ -114,19 +116,26 @@ export default class WorkersManager extends Device {
      * @param data.onError onError Callback call that will be after an error worker
      * @param data.onExit onExit Callback call that will be after an exit worker
     */
-    inputWorkerAdd(data: { data: any, onError: (error: any) => void, onExit: () => void }) {
+    inputWorkerAdd(data: {isolated: boolean, data: any, onError: (error: any) => void, onExit: () => void }) {
         return new Promise((resolve, reject) => {
             const id = this.workerIndex()
             const index = this.addWorkerQueue(id, resolve, reject)
             this.workersQueue[id] = []
             data.data.__index = index
             data.data.__id = id
-            const nWorker = new Worker(this.options.workderIndexPath, { workerData: data.data })
+            const nWorker = new UniversalWorker({
+                isolated: data.isolated,
+                scriptPath: this.options.workderIndexPath,
+                workerData: data.data
+            })
             this.workers.set(id, nWorker)
             nWorker.on('message', (mData: IWorkerMessage)=>{
                 if (mData.internal) return this.internal(id, mData)
                 if (mData.command === 'broadcast') return this.ports.output['broadcast'].push(mData)
-                if (mData.command === 'error') return nWorker.emit('error', ErrorManager.make('WM_INTERNAL_ERROR').add(mData.error as Error))
+                if (mData.command === 'error') { 
+                    data.onError(ErrorManager.make('WM_INTERNAL_ERROR').add(mData.error as Error))
+                    return
+                }
                 if (mData.__index && this.Queue.has(mData.__index)) return this.queueMaintenance(id, mData)
             })
             nWorker.on('exit', ()=>{
@@ -187,7 +196,7 @@ export default class WorkersManager extends Device {
             try {
                 data.data.__index = index
                 if (!this.workers.get(data.id)) throw ErrorManager.make('WM_WORKER_EXIT')
-                this.workers.get(data.id)?.postMessage(data.data)
+                this.workers.get(data.id)?.send(data.data)
             } catch (error) {
                 this.Queue.delete(index)
                 reject(error)
@@ -235,7 +244,7 @@ export default class WorkersManager extends Device {
             data.resultData = CoreError.objectify(error)
             data.result = 'error'
         }
-        this.workers.get(id)?.postMessage(data)
+        this.workers.get(id)?.send(data)
     }
     
     /**

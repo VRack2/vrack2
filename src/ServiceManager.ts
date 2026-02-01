@@ -121,6 +121,7 @@ export default class ServiceManager extends Device {
     system: false,
     autoStart: false,
     autoReload: false,
+    isolated: false,
   }
 
   /**
@@ -322,6 +323,8 @@ export default class ServiceManager extends Device {
     conf.autoReload = false
     // Запуск воркера
     this.servicesWorker[data.service] = await this.ports.output['worker.add'].push({
+      // Является ли данный сервис изолированным
+      isolated: this.servicesMeta[conf.id].isolated,
       // Данные workerData которые будут переданы в новый процесс
       data: this.serviceWorkerData(conf, 'worker'),
       onError: (error: any) => {

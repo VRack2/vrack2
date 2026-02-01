@@ -62,6 +62,7 @@ export default class WorkersManager extends Device {
      * @param data.onExit onExit Callback call that will be after an exit worker
     */
     inputWorkerAdd(data: {
+        isolated: boolean;
         data: any;
         onError: (error: any) => void;
         onExit: () => void;
