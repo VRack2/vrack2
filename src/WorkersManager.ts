@@ -2,7 +2,6 @@ import { CoreError, Device, ErrorManager, Port, Rule, UniversalWorker } from "vr
 import { join } from "path";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
-import { Worker } from "worker_threads";
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IBroadcast from "./interfaces/IBroadcast";
 

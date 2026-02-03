@@ -192,6 +192,7 @@ module.exports = a
     "description" : "Небольшое описание сервиса",
     "autoStart": false,
     "autoReload": false,
+    "isolated": false
 }
 ```
 
@@ -202,6 +203,7 @@ module.exports = a
  * **description** *string* - Небольшое понятное описание сервиса
  * **autoStart** *boolean* - Если `true` сервис будет запущен после старта VRack
  * **autoReload** *boolean* - Если `true` сервис будет перезапущен, если он завершит свою работу в связи с ошибкой
+ * **isolated** *boolean* - Если `true` сервис будет запщуен в отдельном процессе для изоляции кода, см [Работа с LL интерфейсами: I²C, Serial...](./LLHardware.md)
 
 ## Переопределение конфигурации сервис-файла
 
