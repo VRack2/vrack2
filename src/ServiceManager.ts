@@ -202,7 +202,7 @@ export default class ServiceManager extends Device {
       owner: this.type,
       icon: 'arrow-repeat',
       handler: this.apiServiceListUpdate.bind(this),
-      return: Rule.array().content(this.ServiceRule)
+      return: Rule.object().fields({ serviceID: this.ServiceRule })
       .description('List array of services configs')
     })
 

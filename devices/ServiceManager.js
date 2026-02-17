@@ -174,7 +174,7 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'arrow-repeat',
             handler: this.apiServiceListUpdate.bind(this),
-            return: vrack2_core_1.Rule.array().content(this.ServiceRule)
+            return: vrack2_core_1.Rule.object().fields({ serviceID: this.ServiceRule })
                 .description('List array of services configs')
         });
         this.ports.output['register.command'].push({
