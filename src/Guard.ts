@@ -68,7 +68,10 @@ interface IGuardClient extends IRegisteredClient {
 export default class Guard extends Device {
 
     guardedClients: { [key: number]: { [key: number]: IGuardClient } } = {}
-
+    description(): string {
+        return `Guard отвечает за управление клиентами, аутентификацию и шифрование данных. Он обрабатывает команды от клиентов, проверяет их авторизацию и обеспечивает безопасный обмен данными через шифрование AES-256. 
+Предоставляет методы для регистрации/разрегистрации клиентов, а также отправки бродкастов.`
+    }
     inputs(): { [key: string]: BasicPort; } {
         return {
             'clients.command': Port.return().description('Command sending port from Clients'),
@@ -220,9 +223,12 @@ export default class Guard extends Device {
         })
 
         try {
+            this.Container.emit('Guard.client.command', clientData)
             const result = await this.ports.output['master.command'].push(clientData)
             data.data = this.response(client, clientData, 'success', result)
+            this.Container.emit('Guard.client.command.success', { clientData, result })
         } catch (error) {
+            this.Container.emit('Guard.client.command.error', { clientData, error })
             data.data = this.response(client, clientData, 'error', error)
         }
 
@@ -255,6 +261,7 @@ export default class Guard extends Device {
     */
     inputClientsRegister(data: IRegisteredClient) {
         if (!this.guardedClients[data.providerId]) this.guardedClients[data.providerId] = {}
+        this.Container.emit('Guard.client.register', data)
         this.guardedClients[data.providerId][data.clientId] = Object.assign({
             authorize: false, cipher: false, private: '', level: 1000, verify: ''
         }, data)
@@ -267,6 +274,7 @@ export default class Guard extends Device {
     */
     inputClientsUnregister(data: IRegisteredClient) {
         if (!this.guardedClients[data.providerId] || this.guardedClients[data.providerId][data.clientId]) return
+        this.Container.emit('Guard.client.unregister', data)
         delete this.guardedClients[data.providerId][data.clientId]
     }
 
@@ -282,6 +290,7 @@ export default class Guard extends Device {
         client.authorize = true
         client.cipher = cipher
         client.level = client.key?.level
+        this.Container.emit('Guard.client.autorize', client)
         return { level: client.level, cipher }
     }
 

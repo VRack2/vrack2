@@ -39,7 +39,11 @@ ErrorManager.register('ServiceManager', 'D32C9P24SVPQ', 'SM_SUMBASTER_COMMAND_NO
 })
 
 export default class ServiceManager extends Device {
-
+  description(): string {
+    return `Устройство ServiceManager управляет жизненным циклом сервисов в системе. 
+Оно отслеживает изменения файлов сервисов, запускает и останавливает контейнеры, управляет автозапуском и перезапуском сервисов. 
+Устройство предоставляет API для получения информации о службах, их метаданных и ошибок.`
+  }
   outputs(): { [key: string]: BasicPort; } {
     return {
       'register.command': Port.standart().description('Register command into master'),
@@ -112,6 +116,12 @@ export default class ServiceManager extends Device {
   protected servicesTimer: { [key: string]: NodeJS.Timeout | undefined } = {}
 
   /**
+   * Содержит список подключенных внутренних каналов и 
+   * сервисы которые на эти каналы подключены
+  */
+  protected servicesContainerChannels: {[key: string]: Array<string> } = {}
+
+  /**
    * Мета данные сервиса по умолчанию
   */
   protected defaultMeta: IServiceMeta = {
@@ -122,6 +132,7 @@ export default class ServiceManager extends Device {
     autoStart: false,
     autoReload: false,
     isolated: false,
+    parentChannels: []
   }
 
   /**
@@ -342,16 +353,25 @@ export default class ServiceManager extends Device {
           if (this.options.ignoreAutoReloadErrors.indexOf(iError.vShort) !== -1) conf.autoReload = false
         }
         // Сообщяем об ошибке
-        this.Container.emit('service.error', conf.id, error)
+        this.Container.emit('ServiceManager.service.error', { 
+          service: conf, 
+          error: CoreError.objectify(error) 
+        })
         // Добавляем ошибку 
         this.addError(conf.id, error)
       },
       onExit: () => {
         // Удаляем активный вокрер
         delete this.servicesWorker[data.service]
+        // Отписываемся если есть что отписывать
+        this.unsubscribeService(conf.id)
         // Говорим что сервис более не запущен
         conf.run = false
         this.broadcastUpdate([conf.id]) // Отправка всем изменений
+
+        // Сообщаем о завершении работы сервиса
+        this.Container.emit('ServiceManager.service.exit', { service: conf })
+
         // Если релоад отключен или таймер стоит по какой то причине уже то return
         if (!conf.autoReload || this.servicesTimer[conf.id] !== undefined) return
         // Если 
@@ -365,23 +385,35 @@ export default class ServiceManager extends Device {
         }, 5000)
       }
     })
-    const iReq: IGuardMessage = {
-      providerId: 0,
-      providerType: 'ServiceManager',
-      clientId: 0,
-      command: 'serviceStart',
-      level: 0,
-      data: {
+
+    const iReq: IGuardMessage = this.makeServiceRequest('serviceStart', {
         service: conf.id,
         meta: this.servicesMeta[conf.id],
         info: conf
-      }
-    }
+    })
+
     await this.inputSubmaster(iReq)
     conf.run = true
     conf.startedAt = Date.now()
     this.broadcastUpdate([conf.id])
+    this.subscribeService(conf.id)
+    // Сообщаем о запуске сервиса
+    this.Container.emit('ServiceManager.service.start', { service: conf })
+
     return conf
+  }
+
+  unsubscribeService(id:string){
+    // У нас мета данные могут поменятся - при закрытии сервиса
+    // просто отписываем все каналы которые есть для этого сервиса
+    for (const ch in this.servicesContainerChannels){
+      for (let i = 0; i < this.servicesContainerChannels[ch].length; i++){
+        if (this.servicesContainerChannels[ch][i] === id){
+          this.servicesContainerChannels[ch].splice(i, 1);
+          break
+        }
+      }
+    }
   }
 
   /**
@@ -399,6 +431,7 @@ export default class ServiceManager extends Device {
     if (!conf.run) throw ErrorManager.make('SM_SERVICE_NOT_RUN')
     try {
       await this.ports.output['worker.stop'].push({ id: this.servicesWorker[conf.id] })
+      this.Container.emit('ServiceManager.service.stop', { service: conf })
       return conf
     } catch (error) {
       this.broadcastUpdate([conf.id])
@@ -430,18 +463,13 @@ export default class ServiceManager extends Device {
       },
       onExit: () => { return }
     })
-    const iReq: IGuardMessage = {
-      providerId: 0,
-      level: 0,
-      clientId: 0,
-      providerType: 'ServiceManager',
-      command: 'serviceCheck',
-      data: {
+
+
+    const iReq: IGuardMessage = this.makeServiceRequest('serviceCheck', {
         service: conf.id,
         meta: this.servicesMeta[conf.id],
         info: conf
-      }
-    }
+    })
 
     await this.ports.output['worker.request'].push({ id: wid, data: iReq })
     return {};
@@ -481,7 +509,7 @@ export default class ServiceManager extends Device {
    * Update service list
    * 
    * return service list
-   * @see apiServiceList
+   * @see apiServiceList()
   */
   async apiServiceListUpdate() {
     for (const dirConf of this.options.servicesDirs) {
@@ -504,7 +532,6 @@ export default class ServiceManager extends Device {
    * Attempts to execute a command within the specified service.
   */
   async inputSubmaster(data: IGuardMessage) {
-    
     if (!data.data || !data.data.service) throw ErrorManager.make('SM_SUMBASTER_COMMAND_NOT_FOUND')
     if (!this.servicesList[data.data.service]) throw ErrorManager.make('SM_SERVICE_NOT_FOUND', { id: data.data.service })
     if (!this.servicesWorker[data.data.service]) throw ErrorManager.make('SM_SERVICE_NOT_RUN', { id: data.data.service })
@@ -530,6 +557,7 @@ export default class ServiceManager extends Device {
         this.Queue.set(filename, setTimeout(async () => {
           try {
             // Генерация 
+            this.Container.emit('ServiceManager.service.convert', { service: res[0], dir: dirConf.dir, filename })
             await this.convert(dirConf.dir, res[0], res[1], filename)
           } catch (error) {
             // Печатаем ошибку для debug/syslog
@@ -576,6 +604,8 @@ export default class ServiceManager extends Device {
   */
   protected broadcastUpdate(ids: Array<string>) {
     for (const id of ids) {
+      this.Container.emit('ServiceManager.service.update', { service: this.servicesList[id] })
+
       this.ports.output['broadcast'].push({
         command: 'broadcast',
         channel: 'manager.service.' + id + '.update',
@@ -679,6 +709,55 @@ export default class ServiceManager extends Device {
       return Object.assign({}, this.defaultMeta, ImportManager.importJSON(p))
     } catch (err) {
       return Object.assign({}, this.defaultMeta)
+    }
+  }
+
+
+  protected makeServiceRequest(command: string, data: any) : IGuardMessage{
+    return {
+      providerId: 0,
+      level: 0,
+      clientId: 0,
+      providerType: 'ServiceManager',
+      command,data
+    }
+  }
+
+  /**
+   * Подписывает переданный сервис на каналы указанные в meta данных
+   * 
+   * @param id Идентификтар сервиса
+  */
+  protected subscribeService(id:string){
+    const meta = this.servicesMeta[id]
+    // Если каналов не указано
+    if (!meta.parentChannels || meta.parentChannels.length === 0) return
+    for (const ch of meta.parentChannels){
+      // Каналы есть - проверяем подписаны ли мы на на него уже
+      if (this.servicesContainerChannels[ch]) {
+        // если уже подписаны - добавляем наш сервис туда 
+        this.servicesContainerChannels[ch].push(id)
+      }else {
+        // Подписки небыло - инициализируем
+        this.servicesContainerChannels[ch] = [id]
+        // Подписываем на сам канал
+        this.Container.addListener(ch, (data: any) => {
+          this.containerEvent(id,ch, data)
+        })
+      }
+    }
+  }
+
+  /**
+   * Выполняется когда срабатывает подписанное событие контейнера
+  */
+  protected async containerEvent(service: string, channel: string, data: any){
+    if (!this.servicesContainerChannels[channel] || this.servicesContainerChannels[channel].length === 0) return
+    const iReq: IGuardMessage = this.makeServiceRequest('serviceParentEvent', { service, channel, data })
+    try {
+      await this.inputSubmaster(iReq)
+    }catch(err){
+      this.error("Error send submaser container event", err as Error)
     }
   }
 

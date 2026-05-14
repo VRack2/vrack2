@@ -15,12 +15,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
 const path_1 = __importDefault(require("path"));
 class DeviceInfo extends vrack2_core_1.Device {
+    description() {
+        return `DeviceInfo — прокси-устройство для получения актуальной метаинформации об устройствах системы. 
+
+Регистрирует команды vendorList, vendorDevices, vendorDeviceInfo, но выполняет их через изолированный воркер DeviceWorker. 
+Такой подход гарантирует обход кеширования классов при динамическом импорте устройств и возврат свежих данных о портах, экшенах, метриках и описании устройств.`;
+    }
     outputs() {
         return {
-            'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
-            'worker.add': vrack2_core_1.Port.return().description('Run new worker for service'),
-            'worker.stop': vrack2_core_1.Port.return().description('Stop service worker '),
-            'worker.request': vrack2_core_1.Port.return().description('Send request to worker'),
+            'register.command': vrack2_core_1.Port.standart().description('Регистрация своей команды в мастере'),
+            'worker.add': vrack2_core_1.Port.return().description('Запуск воркера через WorkersManager'),
+            'worker.stop': vrack2_core_1.Port.return().description('Остановка воркера через WorkersManager'),
+            'worker.request': vrack2_core_1.Port.return().description('Отправка запроса через WorkersManager'),
         };
     }
     process() {

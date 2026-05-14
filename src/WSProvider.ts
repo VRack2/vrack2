@@ -5,6 +5,11 @@ import WebSocket from "ws"
 import IProviderMessage from "./interfaces/IProviderMessage";
 
 export default class WSProvider extends Device {
+  description(): string {
+    return `Устройство WSProvider обеспечивает WebSocket-соединения с клиентами. 
+Оно создает сервер, обрабатывает подключения, отправку и получение данных через WebSocket. 
+Устройство отслеживает активность клиентов, отправляет пинги для проверки соединения и поддерживает метрики передачи данных.`
+  }
 
   outputs(): { [key: string]: BasicPort; } {
     return {

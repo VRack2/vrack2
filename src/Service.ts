@@ -23,6 +23,12 @@ ErrorManager.register('Service', 'OFPCDVLAH535', 'SERVICE_CONTAINER_TERMINATE', 
 ErrorManager.register('Service', 'OVD06P5ZF9RV', 'SERVICE_CAPTURE_PORT_TIMEOUT', 'Timeout occurred while waiting for device output capture')
 export default class Serivce extends Device {
 
+    description(): string {
+        return `Устройство Serivce управляет контейнером сервиса, обеспечивая его запуск, мониторинг и управление. 
+Оно предоставляет API-команды для запуска сервиса, получения метрик устройств, выполнения действий и отправки данных. 
+Устройство отслеживает ошибки контейнера и автоматически завершает работу при возникновении критических ошибок.`
+    }
+
     outputs(): { [key: string]: BasicPort; } {
         return {
             send: Port.standart().description('Send data to parent process'),
@@ -282,6 +288,24 @@ export default class Serivce extends Device {
             }).description('Metric request result - see vrack-db read documentation')
         })
 
+        this.ports.output['register.command'].push({
+            command: 'serviceParentEvent',
+            short: 'Internal Parent Event',
+            description: 'Request internal parent event to child service',
+            level: 1, // only internal request
+            owner: this.type,
+            icon: 'calendar-event',
+            handler: this.apiServiceParentEvent.bind(this),
+            rules: {
+                channel: Rule.string()
+                    .required()
+                    .example('manager.service.test.update')
+                    .description('Channel name'),
+                data: Rule.any(),
+            },
+            return: Rule.string()
+        })
+
         /* SEND METRICS */
         setInterval(() => {
             const mem = process.memoryUsage()
@@ -294,6 +318,7 @@ export default class Serivce extends Device {
 
         process.addListener('uncaughtException', (error) => {
             this.Container.emit('system.error', error)
+            this.ServiceContainer.emit('system.error', error)
         })
     }
 
@@ -473,6 +498,16 @@ export default class Serivce extends Device {
         let precision: string | number = data.precision
         if (!isNaN(parseInt(precision))) precision = parseInt(precision)
         return DM.read(data.device, data.metric, data.period, precision, data.func)
+    }
+
+
+    /**
+     * Выполняет внутреннюю передачу события из основного родительского контейнера
+     * 
+    */
+    async apiServiceParentEvent(data: { channel: string, data: any}){
+        this.ServiceContainer.emit('Service.parent.event', data)
+        this.Container.emit('Service.parent.event', data)
     }
 
     /*                      Helpers                    */

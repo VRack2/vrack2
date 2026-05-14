@@ -9,6 +9,7 @@ import IApiKey from "./interfaces/IApiKey";
  * Guard also uses this device to reconcile and authorize keys
 */
 export default class KeyManager extends Device {
+    description(): string;
     outputs(): {
         [key: string]: BasicPort;
     };

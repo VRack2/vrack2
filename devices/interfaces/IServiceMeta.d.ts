@@ -16,4 +16,6 @@ export default interface IServiceMeta {
     autoReload: boolean;
     /** Требуется ли сервису изоляция от основного процесса */
     isolated: boolean;
+    /**  Список подписок на внутренние каналы */
+    parentChannels?: Array<string>;
 }

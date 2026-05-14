@@ -24,6 +24,7 @@ export default class Guard extends Device {
             [key: number]: IGuardClient;
         };
     };
+    description(): string;
     inputs(): {
         [key: string]: BasicPort;
     };

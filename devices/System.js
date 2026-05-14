@@ -16,6 +16,11 @@ const vrack2_core_1 = require("vrack2-core");
 const os_1 = __importDefault(require("os"));
 const process_1 = __importDefault(require("process"));
 class System extends vrack2_core_1.Device {
+    description() {
+        return `Устройство System предоставляет системную информацию и метрики. 
+Оно отслеживает использование памяти системы и предоставляет API для получения информации о хосте, CPU, сети и Node.js окружении. 
+Устройство также позволяет получать системные метрики через VRackDB и управлять визуальной структурой сервисов по их ID.`;
+    }
     outputs() {
         return {
             'register.command': vrack2_core_1.Port.standart().description('Register command into master'),

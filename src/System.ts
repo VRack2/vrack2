@@ -7,6 +7,13 @@ import IGuardMessage from "./interfaces/IGuardMessage";
 import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 
 export default class System extends Device {
+
+  description(): string {
+    return `Устройство System предоставляет системную информацию и метрики. 
+Оно отслеживает использование памяти системы и предоставляет API для получения информации о хосте, CPU, сети и Node.js окружении. 
+Устройство также позволяет получать системные метрики через VRackDB и управлять визуальной структурой сервисов по их ID.`
+  }
+
   outputs(): { [key: string]: BasicPort; } {
     return {
       'register.command': Port.standart().description('Register command into master'),

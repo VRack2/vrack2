@@ -39,6 +39,11 @@ class WSProvider extends vrack2_core_1.Device {
             send: 0,
         };
     }
+    description() {
+        return `Устройство WSProvider обеспечивает WebSocket-соединения с клиентами. 
+Оно создает сервер, обрабатывает подключения, отправку и получение данных через WebSocket. 
+Устройство отслеживает активность клиентов, отправляет пинги для проверки соединения и поддерживает метрики передачи данных.`;
+    }
     outputs() {
         return {
             command: vrack2_core_1.Port.return().description('Port for client command request'),

@@ -9,6 +9,7 @@ import IDeviceActionRequest from "./interfaces/IDeviceActionRequest";
 import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 import IDevicePushRequest from "./interfaces/IDevicePushRequest";
 export default class Serivce extends Device {
+    description(): string;
     outputs(): {
         [key: string]: BasicPort;
     };
@@ -134,6 +135,14 @@ export default class Serivce extends Device {
      * Obtaining system metrics. Those that were initialized at the VRack2 level
      */
     apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
+    /**
+     * Выполняет внутреннюю передачу события из основного родительского контейнера
+     *
+    */
+    apiServiceParentEvent(data: {
+        channel: string;
+        data: any;
+    }): Promise<void>;
     /**
      * Bind container device terminate event
     */

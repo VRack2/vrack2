@@ -7,6 +7,15 @@ import BasicType from "vrack2-core/lib/validator/types/BasicType";
 
 export default class Broadcaster extends Device {
 
+    description(): string {
+        return `Broadcaster - Отвечает за систему бродкастов для подключенных к системе клиентов. Клиенты могут подписываться на именованные каналы, 
+после чего получать данные, переданные в эти каналы.
+
+Клиент может подписываться на каналы более высокого уровня что бы не подписываться 100 каналов более низкого уровня. К примеру вместо - 
+'service.a', 'service.b', 'service.c', он может сразу подключится к 'service.*' получая данные по любому сервису
+`
+    }
+
     inputs(): { [key: string]: BasicPort; } {
         return {
             'clients.broadcast%d': Port.standart().dynamic(this.options.broadcastInputs).description('Broadcast to clients port'),
@@ -138,8 +147,12 @@ export default class Broadcaster extends Device {
     */
     async apiChannelJoin(data: { channel: string }, gData: IGuardMessage) {
         const entity = this.createEntity(gData.providerId, gData.clientId)
+        // Add client to channel
         this.getChannel(data.channel).add(entity)
+
+        // Register channel for client 
         this.getEntity(entity).add(data.channel)
+        this.Container.emit('Broadcaster.channel.join', {entity, channel: data.channel})
         return 'success'
     }
 
@@ -150,8 +163,12 @@ export default class Broadcaster extends Device {
     */
     async apiChannelLeave(data: { channel: string }, gData: IGuardMessage) {
         const entity = this.createEntity(gData.providerId, gData.clientId)
+        // Remove client from channel
         this.getChannel(data.channel).delete(entity)
+        
+        // Remove channel from client's list
         this.getEntity(entity).delete(data.channel)
+        this.Container.emit('Broadcaster.channel.leave', { entity, channel: data.channel })
         return 'success'
     }
 

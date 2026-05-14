@@ -72,6 +72,11 @@ class Serivce extends vrack2_core_1.Device {
         */
         this.capturePull = new Map();
     }
+    description() {
+        return `Устройство Serivce управляет контейнером сервиса, обеспечивая его запуск, мониторинг и управление. 
+Оно предоставляет API-команды для запуска сервиса, получения метрик устройств, выполнения действий и отправки данных. 
+Устройство отслеживает ошибки контейнера и автоматически завершает работу при возникновении критических ошибок.`;
+    }
     outputs() {
         return {
             send: vrack2_core_1.Port.standart().description('Send data to parent process'),
@@ -245,6 +250,23 @@ class Serivce extends vrack2_core_1.Device {
                 }).description('Metric storage object')).description('Array of metrics')
             }).description('Metric request result - see vrack-db read documentation')
         });
+        this.ports.output['register.command'].push({
+            command: 'serviceParentEvent',
+            short: 'Internal Parent Event',
+            description: 'Request internal parent event to child service',
+            level: 1,
+            owner: this.type,
+            icon: 'calendar-event',
+            handler: this.apiServiceParentEvent.bind(this),
+            rules: {
+                channel: vrack2_core_1.Rule.string()
+                    .required()
+                    .example('manager.service.test.update')
+                    .description('Channel name'),
+                data: vrack2_core_1.Rule.any(),
+            },
+            return: vrack2_core_1.Rule.string()
+        });
         /* SEND METRICS */
         setInterval(() => {
             const mem = process.memoryUsage();
@@ -256,6 +278,7 @@ class Serivce extends vrack2_core_1.Device {
         }, 5000);
         process.addListener('uncaughtException', (error) => {
             this.Container.emit('system.error', error);
+            this.ServiceContainer.emit('system.error', error);
         });
     }
     /**                 API SERVICE METHODS                 **/
@@ -445,6 +468,16 @@ class Serivce extends vrack2_core_1.Device {
             if (!isNaN(parseInt(precision)))
                 precision = parseInt(precision);
             return DM.read(data.device, data.metric, data.period, precision, data.func);
+        });
+    }
+    /**
+     * Выполняет внутреннюю передачу события из основного родительского контейнера
+     *
+    */
+    apiServiceParentEvent(data) {
+        return __awaiter(this, void 0, void 0, function* () {
+            this.ServiceContainer.emit('Service.parent.event', data);
+            this.Container.emit('Service.parent.event', data);
         });
     }
     /*                      Helpers                    */

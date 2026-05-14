@@ -9,6 +9,7 @@ interface IInternalMessage extends IGuardMessage {
     resultData: any;
 }
 export default class WorkerProvider extends Device {
+    description(): string;
     outputs(): {
         [key: string]: BasicPort;
     };

@@ -52,6 +52,12 @@ export interface ICommandExport {
 
 export default class Master extends Device {
 
+  description(): string {
+    return `Master служит центральным контроллером системы, управляющим регистрацией и выполнением команд. 
+Он предоставляет порты для регистрации команд и их выполнения, а также реализует валидацию данных и проверку уровней доступа. 
+Класс поддерживает динамическую регистрацию команд через порты и позволяет обрабатывать запросы от Guard с проверкой прав доступа.`
+  }
+
   commands: { [key: string]: ICommandRegister } = {}
 
   inputs(): { [key: string]: BasicPort; } {

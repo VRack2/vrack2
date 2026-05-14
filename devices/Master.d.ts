@@ -16,6 +16,7 @@ export interface ICommandExport {
     return?: BasicType;
 }
 export default class Master extends Device {
+    description(): string;
     commands: {
         [key: string]: ICommandRegister;
     };

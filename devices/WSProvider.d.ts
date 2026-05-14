@@ -4,6 +4,7 @@ import BasicType from "vrack2-core/lib/validator/types/BasicType";
 import WebSocket from "ws";
 import IProviderMessage from "./interfaces/IProviderMessage";
 export default class WSProvider extends Device {
+    description(): string;
     outputs(): {
         [key: string]: BasicPort;
     };

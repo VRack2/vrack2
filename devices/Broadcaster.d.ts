@@ -5,6 +5,7 @@ import IRegisteredClient from "./interfaces/IRegisteredClient";
 import IBroadcast from "./interfaces/IBroadcast";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 export default class Broadcaster extends Device {
+    description(): string;
     inputs(): {
         [key: string]: BasicPort;
     };

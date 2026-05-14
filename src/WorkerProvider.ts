@@ -16,6 +16,12 @@ ErrorManager.register('WorkerProvider', 'O0LWU331YS7J', 'WP_INTERNAL_COMMAND_ERR
 
 export default class WorkerProvider extends Device {
 
+    description(): string {
+        return `Устройство WorkerProvider отвечает за управление рабочими процессами в системе.
+Оно обрабатывает команды от основного сервиса VRack2, обеспечивает взаимодействие с дочерними процессами через внутренние каналы 
+и предоставляет API для отправки данных в родительский процесс. Устройство поддерживает очередь запросов и обработку результатов выполнения команд.`
+    }
+
     outputs(): { [key: string]: BasicPort; } {
         return {
             command: Port.return().description('Port for client command request'),

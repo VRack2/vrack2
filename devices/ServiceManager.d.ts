@@ -6,6 +6,7 @@ import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from "./interfaces/IServiceConfig";
 import IServiceMeta from "./interfaces/IServiceMeta";
 export default class ServiceManager extends Device {
+    description(): string;
     outputs(): {
         [key: string]: BasicPort;
     };
@@ -54,6 +55,13 @@ export default class ServiceManager extends Device {
     */
     protected servicesTimer: {
         [key: string]: NodeJS.Timeout | undefined;
+    };
+    /**
+     * Содержит список подключенных внутренних каналов и
+     * сервисы которые на эти каналы подключены
+    */
+    protected servicesContainerChannels: {
+        [key: string]: Array<string>;
     };
     /**
      * Мета данные сервиса по умолчанию
@@ -112,6 +120,7 @@ export default class ServiceManager extends Device {
     apiServiceStart(data: {
         service: string;
     }): Promise<IServiceConfig>;
+    unsubscribeService(id: string): void;
     /**
      * Stop service command
      *
@@ -154,7 +163,7 @@ export default class ServiceManager extends Device {
      * Update service list
      *
      * return service list
-     * @see apiServiceList
+     * @see apiServiceList()
     */
     apiServiceListUpdate(): Promise<{
         [key: string]: any;
@@ -234,6 +243,17 @@ export default class ServiceManager extends Device {
      * @param p Path to metadata file
     */
     protected readServiceMeta(p: string): any;
+    protected makeServiceRequest(command: string, data: any): IGuardMessage;
+    /**
+     * Подписывает переданный сервис на каналы указанные в meta данных
+     *
+     * @param id Идентификтар сервиса
+    */
+    protected subscribeService(id: string): void;
+    /**
+     * Выполняется когда срабатывает подписанное событие контейнера
+    */
+    protected containerEvent(service: string, channel: string, data: any): Promise<void>;
     /**
      * Searches all files and updates the list of available services in the directory
      *

@@ -31,6 +31,12 @@ interface IWorkerMessage extends IBroadcast{
 
 export default class WorkersManager extends Device {
     
+    description(): string {
+        return `Устройство WorkersManager управляет дочерними процессами (воркерами) в системе. Оно создает, останавливает и управляет взаимодействием с воркерами через IPC.
+Устройство поддерживает очередь задач для каждого воркера и обрабатывает ошибки выполнения. Д
+ля каждого воркера создается отдельный процесс с переданными данными и обрабатываются сообщения между основным сервисом и дочерними процессами.`
+    }
+
     inputs(): { [key: string]: BasicPort; } {
         return {
             'worker%d.add': Port.return().requirement(

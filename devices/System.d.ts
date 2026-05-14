@@ -4,6 +4,7 @@ import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 export default class System extends Device {
+    description(): string;
     outputs(): {
         [key: string]: BasicPort;
     };

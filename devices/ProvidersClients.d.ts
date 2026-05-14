@@ -6,6 +6,7 @@ import IRegisterProviderClient from "./interfaces/IRegisterProviderClient";
 import IUnregisterProviderClient from "./interfaces/IUnregisterProviderClient";
 import IRegisteredClient from "./interfaces/IRegisteredClient";
 export default class ProvidersClients extends Device {
+    description(): string;
     /**
      * Registered information
      *

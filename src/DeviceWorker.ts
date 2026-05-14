@@ -1,10 +1,11 @@
-import { CoreError, Device, ErrorManager, ImportManager, Port, Rule, DeviceManager, BasicPort, BasicType} from "vrack2-core";
-
-import { workerData, threadId } from "worker_threads"
-
-
+import {  Device, Port, Rule, DeviceManager, BasicPort} from "vrack2-core";
 
 export default class DeviceWorker extends Device {
+
+  description(): string {
+    return `DeviceWorker реализует работу с устройствами через API, предоставляя методы для получения списка вендоров, 
+  устройств вендора и информации об отдельном устройстве. `
+  }
 
   outputs(): { [key: string]: BasicPort; } {
     return {
@@ -16,7 +17,7 @@ export default class DeviceWorker extends Device {
     this.ports.output['register.command'].push({
       command: 'vendorList',
       short: 'Get vendors list',
-      description: 'Getting device vendors',
+      description: 'Getting device vendors list',
       level: 3,
       owner: this.type,
       icon: 'globe',
@@ -30,7 +31,7 @@ export default class DeviceWorker extends Device {
     this.ports.output['register.command'].push({
       command: 'vendorDevices',
       short: 'Get devices list',
-      description: 'Getting device vendors',
+      description: 'Getting device of select vendors',
       level: 3,
       owner: this.type,
       icon: 'hdd-stack',
@@ -46,7 +47,7 @@ export default class DeviceWorker extends Device {
     this.ports.output['register.command'].push({
       command: 'vendorDeviceInfo',
       short: 'Get device info',
-      description: 'Getting device info',
+      description: 'Getting device info of select vendor & device',
       level: 3,
       owner: this.type,
       icon: 'hdd',

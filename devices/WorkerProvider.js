@@ -17,6 +17,11 @@ class WorkerProvider extends vrack2_core_1.Device {
         this.queue = new Map();
         this.qIndex = 1;
     }
+    description() {
+        return `Устройство WorkerProvider отвечает за управление рабочими процессами в системе.
+Оно обрабатывает команды от основного сервиса VRack2, обеспечивает взаимодействие с дочерними процессами через внутренние каналы 
+и предоставляет API для отправки данных в родительский процесс. Устройство поддерживает очередь запросов и обработку результатов выполнения команд.`;
+    }
     outputs() {
         return {
             command: vrack2_core_1.Port.return().description('Port for client command request'),

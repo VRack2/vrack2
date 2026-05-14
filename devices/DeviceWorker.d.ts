@@ -1,5 +1,6 @@
 import { Device, BasicPort } from "vrack2-core";
 export default class DeviceWorker extends Device {
+    description(): string;
     outputs(): {
         [key: string]: BasicPort;
     };

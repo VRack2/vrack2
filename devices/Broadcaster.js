@@ -45,6 +45,14 @@ class Broadcaster extends vrack2_core_1.Device {
         */
         this.clients = new Map();
     }
+    description() {
+        return `Broadcaster - Отвечает за систему бродкастов для подключенных к системе клиентов. Клиенты могут подписываться на именованные каналы, 
+после чего получать данные, переданные в эти каналы.
+
+Клиент может подписываться на каналы более высокого уровня что бы не подписываться 100 каналов более низкого уровня. К примеру вместо - 
+'service.a', 'service.b', 'service.c', он может сразу подключится к 'service.*' получая данные по любому сервису
+`;
+    }
     inputs() {
         return {
             'clients.broadcast%d': vrack2_core_1.Port.standart().dynamic(this.options.broadcastInputs).description('Broadcast to clients port'),
@@ -136,8 +144,11 @@ class Broadcaster extends vrack2_core_1.Device {
     apiChannelJoin(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             const entity = this.createEntity(gData.providerId, gData.clientId);
+            // Add client to channel
             this.getChannel(data.channel).add(entity);
+            // Register channel for client 
             this.getEntity(entity).add(data.channel);
+            this.Container.emit('Broadcaster.channel.join', { entity, channel: data.channel });
             return 'success';
         });
     }
@@ -149,8 +160,11 @@ class Broadcaster extends vrack2_core_1.Device {
     apiChannelLeave(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             const entity = this.createEntity(gData.providerId, gData.clientId);
+            // Remove client from channel
             this.getChannel(data.channel).delete(entity);
+            // Remove channel from client's list
             this.getEntity(entity).delete(data.channel);
+            this.Container.emit('Broadcaster.channel.leave', { entity, channel: data.channel });
             return 'success';
         });
     }

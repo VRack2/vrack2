@@ -7,7 +7,11 @@ import IUnregisterProviderClient from "./interfaces/IUnregisterProviderClient";
 import IRegisteredClient from "./interfaces/IRegisteredClient";
 
 export default class ProvidersClients extends Device {
-
+    description(): string {
+        return `ProvidersClients управляет клиентами различных провайдеров. 
+Он отслеживает регистрацию и разрегистрацию клиентов, а также перенаправляет команды от клиентов к соответствующим обработчикам. 
+Поддерживает динамическую регистрацию портов для разных провайдеров и обеспечивает прозрачную передачу данных между клиентами и системой.`
+    }
     /**
      * Registered information
      * 

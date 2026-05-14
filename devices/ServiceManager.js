@@ -57,6 +57,11 @@ class ServiceManager extends vrack2_core_1.Device {
         */
         this.servicesTimer = {};
         /**
+         * Содержит список подключенных внутренних каналов и
+         * сервисы которые на эти каналы подключены
+        */
+        this.servicesContainerChannels = {};
+        /**
          * Мета данные сервиса по умолчанию
         */
         this.defaultMeta = {
@@ -67,6 +72,7 @@ class ServiceManager extends vrack2_core_1.Device {
             autoStart: false,
             autoReload: false,
             isolated: false,
+            parentChannels: []
         };
         /**
          * Очередь для отслеживание и перегенерации файлов сервисов
@@ -89,6 +95,11 @@ class ServiceManager extends vrack2_core_1.Device {
             autoReload: vrack2_core_1.Rule.boolean().example(false).description('flag for autostart'),
             deleted: vrack2_core_1.Rule.boolean().example(false).description('Deleted flag (deleted but service working now)')
         }).description('Service object information');
+    }
+    description() {
+        return `Устройство ServiceManager управляет жизненным циклом сервисов в системе. 
+Оно отслеживает изменения файлов сервисов, запускает и останавливает контейнеры, управляет автозапуском и перезапуском сервисов. 
+Устройство предоставляет API для получения информации о службах, их метаданных и ошибок.`;
     }
     outputs() {
         return {
@@ -315,16 +326,23 @@ class ServiceManager extends vrack2_core_1.Device {
                             conf.autoReload = false;
                     }
                     // Сообщяем об ошибке
-                    this.Container.emit('service.error', conf.id, error);
+                    this.Container.emit('ServiceManager.service.error', {
+                        service: conf,
+                        error: vrack2_core_1.CoreError.objectify(error)
+                    });
                     // Добавляем ошибку 
                     this.addError(conf.id, error);
                 },
                 onExit: () => {
                     // Удаляем активный вокрер
                     delete this.servicesWorker[data.service];
+                    // Отписываемся если есть что отписывать
+                    this.unsubscribeService(conf.id);
                     // Говорим что сервис более не запущен
                     conf.run = false;
                     this.broadcastUpdate([conf.id]); // Отправка всем изменений
+                    // Сообщаем о завершении работы сервиса
+                    this.Container.emit('ServiceManager.service.exit', { service: conf });
                     // Если релоад отключен или таймер стоит по какой то причине уже то return
                     if (!conf.autoReload || this.servicesTimer[conf.id] !== undefined)
                         return;
@@ -343,24 +361,32 @@ class ServiceManager extends vrack2_core_1.Device {
                     }, 5000);
                 }
             });
-            const iReq = {
-                providerId: 0,
-                providerType: 'ServiceManager',
-                clientId: 0,
-                command: 'serviceStart',
-                level: 0,
-                data: {
-                    service: conf.id,
-                    meta: this.servicesMeta[conf.id],
-                    info: conf
-                }
-            };
+            const iReq = this.makeServiceRequest('serviceStart', {
+                service: conf.id,
+                meta: this.servicesMeta[conf.id],
+                info: conf
+            });
             yield this.inputSubmaster(iReq);
             conf.run = true;
             conf.startedAt = Date.now();
             this.broadcastUpdate([conf.id]);
+            this.subscribeService(conf.id);
+            // Сообщаем о запуске сервиса
+            this.Container.emit('ServiceManager.service.start', { service: conf });
             return conf;
         });
+    }
+    unsubscribeService(id) {
+        // У нас мета данные могут поменятся - при закрытии сервиса
+        // просто отписываем все каналы которые есть для этого сервиса
+        for (const ch in this.servicesContainerChannels) {
+            for (let i = 0; i < this.servicesContainerChannels[ch].length; i++) {
+                if (this.servicesContainerChannels[ch][i] === id) {
+                    this.servicesContainerChannels[ch].splice(i, 1);
+                    break;
+                }
+            }
+        }
     }
     /**
      * Stop service command
@@ -379,6 +405,7 @@ class ServiceManager extends vrack2_core_1.Device {
                 throw vrack2_core_1.ErrorManager.make('SM_SERVICE_NOT_RUN');
             try {
                 yield this.ports.output['worker.stop'].push({ id: this.servicesWorker[conf.id] });
+                this.Container.emit('ServiceManager.service.stop', { service: conf });
                 return conf;
             }
             catch (error) {
@@ -411,18 +438,11 @@ class ServiceManager extends vrack2_core_1.Device {
                 },
                 onExit: () => { return; }
             });
-            const iReq = {
-                providerId: 0,
-                level: 0,
-                clientId: 0,
-                providerType: 'ServiceManager',
-                command: 'serviceCheck',
-                data: {
-                    service: conf.id,
-                    meta: this.servicesMeta[conf.id],
-                    info: conf
-                }
-            };
+            const iReq = this.makeServiceRequest('serviceCheck', {
+                service: conf.id,
+                meta: this.servicesMeta[conf.id],
+                info: conf
+            });
             yield this.ports.output['worker.request'].push({ id: wid, data: iReq });
             return {};
         });
@@ -463,7 +483,7 @@ class ServiceManager extends vrack2_core_1.Device {
      * Update service list
      *
      * return service list
-     * @see apiServiceList
+     * @see apiServiceList()
     */
     apiServiceListUpdate() {
         return __awaiter(this, void 0, void 0, function* () {
@@ -524,6 +544,7 @@ class ServiceManager extends vrack2_core_1.Device {
                 this.Queue.set(filename, setTimeout(() => __awaiter(this, void 0, void 0, function* () {
                     try {
                         // Генерация 
+                        this.Container.emit('ServiceManager.service.convert', { service: res[0], dir: dirConf.dir, filename });
                         yield this.convert(dirConf.dir, res[0], res[1], filename);
                     }
                     catch (error) {
@@ -575,6 +596,7 @@ class ServiceManager extends vrack2_core_1.Device {
     */
     broadcastUpdate(ids) {
         for (const id of ids) {
+            this.Container.emit('ServiceManager.service.update', { service: this.servicesList[id] });
             this.ports.output['broadcast'].push({
                 command: 'broadcast',
                 channel: 'manager.service.' + id + '.update',
@@ -675,6 +697,57 @@ class ServiceManager extends vrack2_core_1.Device {
         catch (err) {
             return Object.assign({}, this.defaultMeta);
         }
+    }
+    makeServiceRequest(command, data) {
+        return {
+            providerId: 0,
+            level: 0,
+            clientId: 0,
+            providerType: 'ServiceManager',
+            command, data
+        };
+    }
+    /**
+     * Подписывает переданный сервис на каналы указанные в meta данных
+     *
+     * @param id Идентификтар сервиса
+    */
+    subscribeService(id) {
+        const meta = this.servicesMeta[id];
+        // Если каналов не указано
+        if (!meta.parentChannels || meta.parentChannels.length === 0)
+            return;
+        for (const ch of meta.parentChannels) {
+            // Каналы есть - проверяем подписаны ли мы на на него уже
+            if (this.servicesContainerChannels[ch]) {
+                // если уже подписаны - добавляем наш сервис туда 
+                this.servicesContainerChannels[ch].push(id);
+            }
+            else {
+                // Подписки небыло - инициализируем
+                this.servicesContainerChannels[ch] = [id];
+                // Подписываем на сам канал
+                this.Container.addListener(ch, (data) => {
+                    this.containerEvent(id, ch, data);
+                });
+            }
+        }
+    }
+    /**
+     * Выполняется когда срабатывает подписанное событие контейнера
+    */
+    containerEvent(service, channel, data) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.servicesContainerChannels[channel] || this.servicesContainerChannels[channel].length === 0)
+                return;
+            const iReq = this.makeServiceRequest('serviceParentEvent', { service, channel, data });
+            try {
+                yield this.inputSubmaster(iReq);
+            }
+            catch (err) {
+                this.error("Error send submaser container event", err);
+            }
+        });
     }
     /**
      * Searches all files and updates the list of available services in the directory

@@ -1,16 +1,22 @@
-import { CoreError, Device, BasicPort, ErrorManager, ImportManager, Port, Rule } from "vrack2-core";
+import { Device, BasicPort, Port, Rule } from "vrack2-core";
 import IGuardMessage from "./interfaces/IGuardMessage";
-import IServiceConfig from "./interfaces/IServiceConfig";
-import path from 'path'
 
+import path from 'path'
 export default class DeviceInfo extends Device {
+
+  description(): string {
+    return `DeviceInfo — прокси-устройство для получения актуальной метаинформации об устройствах системы. 
+
+Регистрирует команды vendorList, vendorDevices, vendorDeviceInfo, но выполняет их через изолированный воркер DeviceWorker. 
+Такой подход гарантирует обход кеширования классов при динамическом импорте устройств и возврат свежих данных о портах, экшенах, метриках и описании устройств.`
+  }
 
   outputs(): { [key: string]: BasicPort; } {
     return {
-      'register.command': Port.standart().description('Register command into master'),
-      'worker.add': Port.return().description('Run new worker for service'),
-      'worker.stop': Port.return().description('Stop service worker '),
-      'worker.request': Port.return().description('Send request to worker'),
+      'register.command': Port.standart().description('Регистрация своей команды в мастере'),
+      'worker.add': Port.return().description('Запуск воркера через WorkersManager'),
+      'worker.stop': Port.return().description('Остановка воркера через WorkersManager'),
+      'worker.request': Port.return().description('Отправка запроса через WorkersManager'),
     }
   }
 

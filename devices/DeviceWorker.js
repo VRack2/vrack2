@@ -11,6 +11,10 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
 class DeviceWorker extends vrack2_core_1.Device {
+    description() {
+        return `DeviceWorker реализует работу с устройствами через API, предоставляя методы для получения списка вендоров, 
+  устройств вендора и информации об отдельном устройстве. `;
+    }
     outputs() {
         return {
             'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
@@ -20,7 +24,7 @@ class DeviceWorker extends vrack2_core_1.Device {
         this.ports.output['register.command'].push({
             command: 'vendorList',
             short: 'Get vendors list',
-            description: 'Getting device vendors',
+            description: 'Getting device vendors list',
             level: 3,
             owner: this.type,
             icon: 'globe',
@@ -31,7 +35,7 @@ class DeviceWorker extends vrack2_core_1.Device {
         this.ports.output['register.command'].push({
             command: 'vendorDevices',
             short: 'Get devices list',
-            description: 'Getting device vendors',
+            description: 'Getting device of select vendors',
             level: 3,
             owner: this.type,
             icon: 'hdd-stack',
@@ -44,7 +48,7 @@ class DeviceWorker extends vrack2_core_1.Device {
         this.ports.output['register.command'].push({
             command: 'vendorDeviceInfo',
             short: 'Get device info',
-            description: 'Getting device info',
+            description: 'Getting device info of select vendor & device',
             level: 3,
             owner: this.type,
             icon: 'hdd',

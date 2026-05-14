@@ -33,6 +33,11 @@ ErrorManager.register(
 */
 export default class KeyManager extends Device {
 
+    description(): string {
+        return `KeyManager управляет доступом к системе через API-ключи. Он позволяет добавлять, удалять и обновлять ключи с различными уровнями доступа.
+Загружает ключи из JSON-файла при старте и поддерживает их синхронизацию. Для каждого ключа хранятся имя, описание, уровень доступа и опциональный приватный ключ для шифрования.`
+    }
+
     outputs(): { [key: string]: BasicPort; } {
         return {
             'register.command': Port.standart().description('Register command into master'),
@@ -177,6 +182,7 @@ export default class KeyManager extends Device {
             private: data.cipher?this.uid(16):''
         }
         this.keys.push(nKey)
+        this.Container.emit('KeyManager.key.add', nKey )
         this.syncKeys()
         return nKey
     }
@@ -203,6 +209,7 @@ export default class KeyManager extends Device {
         if (!key) throw ErrorManager.make('AKEYM_KEY_NOT_FOUND')
         key.name = data.name
         key.description = data.description
+        this.Container.emit('KeyManager.key.update', key )
         this.syncKeys()
         return 'success'
     }
@@ -217,6 +224,7 @@ export default class KeyManager extends Device {
         for (let i= 0; i< this.keys.length; i++) 
             if (this.keys[i].id === data.id) 
                 this.keys.splice(i, 1)
+        this.Container.emit('KeyManager.key.delete', key )
         this.syncKeys()
         return 'success'
     }

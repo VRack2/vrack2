@@ -23,6 +23,11 @@ class Master extends vrack2_core_1.Device {
         super(...arguments);
         this.commands = {};
     }
+    description() {
+        return `Master служит центральным контроллером системы, управляющим регистрацией и выполнением команд. 
+Он предоставляет порты для регистрации команд и их выполнения, а также реализует валидацию данных и проверку уровней доступа. 
+Класс поддерживает динамическую регистрацию команд через порты и позволяет обрабатывать запросы от Guard с проверкой прав доступа.`;
+    }
     inputs() {
         const ports = {
             'command%d': vrack2_core_1.Port.return().dynamic(this.options.commandPorts).requirement(vrack2_core_1.Rule.object().example({}).description('')),

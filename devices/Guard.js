@@ -35,6 +35,10 @@ class Guard extends vrack2_core_1.Device {
         super(...arguments);
         this.guardedClients = {};
     }
+    description() {
+        return `Guard отвечает за управление клиентами, аутентификацию и шифрование данных. Он обрабатывает команды от клиентов, проверяет их авторизацию и обеспечивает безопасный обмен данными через шифрование AES-256. 
+Предоставляет методы для регистрации/разрегистрации клиентов, а также отправки бродкастов.`;
+    }
     inputs() {
         return {
             'clients.command': vrack2_core_1.Port.return().description('Command sending port from Clients'),
@@ -186,10 +190,13 @@ class Guard extends vrack2_core_1.Device {
                 level: client.level
             });
             try {
+                this.Container.emit('Guard.client.command', clientData);
                 const result = yield this.ports.output['master.command'].push(clientData);
                 data.data = this.response(client, clientData, 'success', result);
+                this.Container.emit('Guard.client.command.success', { clientData, result });
             }
             catch (error) {
+                this.Container.emit('Guard.client.command.error', { clientData, error });
                 data.data = this.response(client, clientData, 'error', error);
             }
             return data;
@@ -223,6 +230,7 @@ class Guard extends vrack2_core_1.Device {
     inputClientsRegister(data) {
         if (!this.guardedClients[data.providerId])
             this.guardedClients[data.providerId] = {};
+        this.Container.emit('Guard.client.register', data);
         this.guardedClients[data.providerId][data.clientId] = Object.assign({
             authorize: false, cipher: false, private: '', level: 1000, verify: ''
         }, data);
@@ -235,6 +243,7 @@ class Guard extends vrack2_core_1.Device {
     inputClientsUnregister(data) {
         if (!this.guardedClients[data.providerId] || this.guardedClients[data.providerId][data.clientId])
             return;
+        this.Container.emit('Guard.client.unregister', data);
         delete this.guardedClients[data.providerId][data.clientId];
     }
     /**
@@ -251,6 +260,7 @@ class Guard extends vrack2_core_1.Device {
         client.authorize = true;
         client.cipher = cipher;
         client.level = (_a = client.key) === null || _a === void 0 ? void 0 : _a.level;
+        this.Container.emit('Guard.client.autorize', client);
         return { level: client.level, cipher };
     }
     /**

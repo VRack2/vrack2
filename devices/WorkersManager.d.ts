@@ -20,6 +20,7 @@ interface IWorkerMessage extends IBroadcast {
     resultData: any;
 }
 export default class WorkersManager extends Device {
+    description(): string;
     inputs(): {
         [key: string]: BasicPort;
     };

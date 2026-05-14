@@ -37,6 +37,11 @@ class WorkersManager extends vrack2_core_1.Device {
         */
         this.workersQueue = [];
     }
+    description() {
+        return `Устройство WorkersManager управляет дочерними процессами (воркерами) в системе. Оно создает, останавливает и управляет взаимодействием с воркерами через IPC.
+Устройство поддерживает очередь задач для каждого воркера и обрабатывает ошибки выполнения. Д
+ля каждого воркера создается отдельный процесс с переданными данными и обрабатываются сообщения между основным сервисом и дочерними процессами.`;
+    }
     inputs() {
         return {
             'worker%d.add': vrack2_core_1.Port.return().requirement(vrack2_core_1.Rule.object().required().fields({

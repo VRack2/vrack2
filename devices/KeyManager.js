@@ -42,6 +42,10 @@ class KeyManager extends vrack2_core_1.Device {
         /** List of access keys */
         this.keys = [];
     }
+    description() {
+        return `KeyManager управляет доступом к системе через API-ключи. Он позволяет добавлять, удалять и обновлять ключи с различными уровнями доступа.
+Загружает ключи из JSON-файла при старте и поддерживает их синхронизацию. Для каждого ключа хранятся имя, описание, уровень доступа и опциональный приватный ключ для шифрования.`;
+    }
     outputs() {
         return {
             'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
@@ -172,6 +176,7 @@ class KeyManager extends vrack2_core_1.Device {
                 private: data.cipher ? this.uid(16) : ''
             };
             this.keys.push(nKey);
+            this.Container.emit('KeyManager.key.add', nKey);
             this.syncKeys();
             return nKey;
         });
@@ -201,6 +206,7 @@ class KeyManager extends vrack2_core_1.Device {
                 throw vrack2_core_1.ErrorManager.make('AKEYM_KEY_NOT_FOUND');
             key.name = data.name;
             key.description = data.description;
+            this.Container.emit('KeyManager.key.update', key);
             this.syncKeys();
             return 'success';
         });
@@ -217,6 +223,7 @@ class KeyManager extends vrack2_core_1.Device {
             for (let i = 0; i < this.keys.length; i++)
                 if (this.keys[i].id === data.id)
                     this.keys.splice(i, 1);
+            this.Container.emit('KeyManager.key.delete', key);
             this.syncKeys();
             return 'success';
         });
