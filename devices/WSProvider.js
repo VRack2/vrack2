@@ -47,13 +47,13 @@ class WSProvider extends vrack2_core_1.Device {
     outputs() {
         return {
             command: vrack2_core_1.Port.return().description('Port for client command request'),
-            register: vrack2_core_1.Port.standart().description('Client register'),
-            unregister: vrack2_core_1.Port.standart().description('Client unregister')
+            register: vrack2_core_1.Port.standard().description('Client register'),
+            unregister: vrack2_core_1.Port.standard().description('Client unregister')
         };
     }
     inputs() {
         return {
-            send: vrack2_core_1.Port.standart().description('To client send port')
+            send: vrack2_core_1.Port.standard().description('To client send port')
         };
     }
     checkOptions() {

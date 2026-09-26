@@ -13,7 +13,7 @@ export default class DeviceInfo extends Device {
 
   outputs(): { [key: string]: BasicPort; } {
     return {
-      'register.command': Port.standart().description('Регистрация своей команды в мастере'),
+      'register.command': Port.standard().description('Регистрация своей команды в мастере'),
       'worker.add': Port.return().description('Запуск воркера через WorkersManager'),
       'worker.stop': Port.return().description('Остановка воркера через WorkersManager'),
       'worker.request': Port.return().description('Отправка запроса через WorkersManager'),

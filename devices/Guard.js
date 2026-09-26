@@ -14,22 +14,22 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
 const crypto_1 = __importDefault(require("crypto"));
-vrack2_core_1.ErrorManager.register('Guard', 'BJZHVPRFLTUS', 'GUARD_CLIENT_NOT_REGISTERED', 'Somehow it happened that the client was not registered, but a request came from him.', {
+vrack2_core_1.ErrorManager.register('Guard', 'GUARD_CLIENT_NOT_REGISTERED', 'Somehow it happened that the client was not registered, but a request came from him.', {
     providerId: vrack2_core_1.Rule.number().min(0).integer().required(),
     clientId: vrack2_core_1.Rule.number().min(0).integer().required()
 });
-vrack2_core_1.ErrorManager.register('Guard', 'CDCQSCNGOONF', 'GUARD_INCORRECT_CLIENT_JSON', 'The client sent data in the request that does not comply with the json format.', {
+vrack2_core_1.ErrorManager.register('Guard', 'GUARD_INCORRECT_CLIENT_JSON', 'The client sent data in the request that does not comply with the json format.', {
     err: vrack2_core_1.Rule.string().description('Error message')
 });
-vrack2_core_1.ErrorManager.register('Guard', 'PBGE8IBZPYSC', 'GUARD_CLIENT_NOT_AUTH', 'You are not authenticated. Please use the apiKeyAuth command before');
-vrack2_core_1.ErrorManager.register('Guard', 'OJ2QOE4AR2FP', 'GUARD_VERIFICATION_FAILED', 'Incorrect verification code');
-vrack2_core_1.ErrorManager.register('Guard', '41N3V60MZNTJ', 'GUARD_DECIPHER_FAILED', 'Error while decrypting data', {
+vrack2_core_1.ErrorManager.register('Guard', 'GUARD_CLIENT_NOT_AUTH', 'You are not authenticated. Please use the apiKeyAuth command before');
+vrack2_core_1.ErrorManager.register('Guard', 'GUARD_VERIFICATION_FAILED', 'Incorrect verification code');
+vrack2_core_1.ErrorManager.register('Guard', 'GUARD_DECIPHER_FAILED', 'Error while decrypting data', {
     error: vrack2_core_1.Rule.string().description('Error description string')
 });
-vrack2_core_1.ErrorManager.register('Guard', 'TPW82KB3TI2O', 'GUARD_CIPHER_FAILED', 'Error while crypting data', {
+vrack2_core_1.ErrorManager.register('Guard', 'GUARD_CIPHER_FAILED', 'Error while crypting data', {
     error: vrack2_core_1.Rule.string().description('Error description string')
 });
-vrack2_core_1.ErrorManager.register('Guard', 'MGYZHDMPBOBR', 'GUARD_PRIVATE_VERIFICATION_FAILED', 'Error while decrypting data');
+vrack2_core_1.ErrorManager.register('Guard', 'GUARD_PRIVATE_VERIFICATION_FAILED', 'Error while decrypting data');
 class Guard extends vrack2_core_1.Device {
     constructor() {
         super(...arguments);
@@ -42,16 +42,16 @@ class Guard extends vrack2_core_1.Device {
     inputs() {
         return {
             'clients.command': vrack2_core_1.Port.return().description('Command sending port from Clients'),
-            'clients.register': vrack2_core_1.Port.standart().description('Register Clients port'),
-            'clients.unregister': vrack2_core_1.Port.standart().description('Unregister Clients port'),
-            'broadcast': vrack2_core_1.Port.standart().description('Port for send broadcast to clients'),
+            'clients.register': vrack2_core_1.Port.standard().description('Register Clients port'),
+            'clients.unregister': vrack2_core_1.Port.standard().description('Unregister Clients port'),
+            'broadcast': vrack2_core_1.Port.standard().description('Port for send broadcast to clients'),
         };
     }
     outputs() {
         return {
             'master.command': vrack2_core_1.Port.return().description('Port for master commands'),
-            'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
-            'client.send': vrack2_core_1.Port.standart().description('Send data to client'),
+            'register.command': vrack2_core_1.Port.standard().description('Register command into master'),
+            'client.send': vrack2_core_1.Port.standard().description('Send data to client'),
         };
     }
     checkOptions() {

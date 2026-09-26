@@ -25,7 +25,7 @@ const defaultKey = {
     key: 'default',
     private: ''
 };
-vrack2_core_1.ErrorManager.register('KeyManager', '8CDGXUV915LH', 'AKEYM_KEY_NOT_FOUND', 'A non-existent key identifier was specified.');
+vrack2_core_1.ErrorManager.register('KeyManager', 'AKEYM_KEY_NOT_FOUND', 'A non-existent key identifier was specified.');
 /**
  * Access Key Manager.
  *
@@ -48,7 +48,7 @@ class KeyManager extends vrack2_core_1.Device {
     }
     outputs() {
         return {
-            'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
+            'register.command': vrack2_core_1.Port.standard().description('Register command into master'),
         };
     }
     checkOptions() {

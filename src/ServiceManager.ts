@@ -8,34 +8,39 @@ import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from "./interfaces/IServiceConfig";
 import IServiceMeta from "./interfaces/IServiceMeta";
 
-ErrorManager.register('ServiceManager', 'QNTN63C26KNS', 'SM_SERVICE_NOT_FOUND',
+ErrorManager.register('ServiceManager', 'SM_SERVICE_NOT_FOUND',
   'Service of this id not found', {
   id: Rule.string().example('testid').description('Service ID')
 })
 
-ErrorManager.register('ServiceManager', '4BJZAFKFLV4O', 'SM_META_NOT_FOUND',
+ErrorManager.register('ServiceManager', 'SM_META_NOT_FOUND',
   'Metadata of this id service not found', {
   id: Rule.string().example('testid').description('Service ID')
 })
 
-ErrorManager.register('ServiceManager', 'QZLBEXAB4CMF', 'SM_SERVICE_RUNNING',
+ErrorManager.register('ServiceManager', 'SM_SERVICE_RUNNING',
   'Service is already running', {
   id: Rule.string().example('testid').description('Service ID')
 })
 
-ErrorManager.register('ServiceManager', 'CLCN1U9I41KR', 'SM_SERVICE_NOT_RUN',
+ErrorManager.register('ServiceManager', 'SM_SERVICE_NOT_RUN',
   'Service not run', {
   id: Rule.string().example('testid').description('Service ID')
 })
 
-ErrorManager.register('ServiceManager', 'CIRBC9815SFP', 'SM_SERVICE_DIR_NOT_FOUND',
+ErrorManager.register('ServiceManager', 'SM_SERVICE_DIR_NOT_FOUND',
   'Service dir not found', {
   dir: Rule.string().example('path/to/dir').description('Service dir')
 })
 
-ErrorManager.register('ServiceManager', 'D32C9P24SVPQ', 'SM_SUMBASTER_COMMAND_NOT_FOUND',
+ErrorManager.register('ServiceManager', 'SM_SUMBASTER_COMMAND_NOT_FOUND',
   'Service  submaster command not found', {
   command: Rule.string().example('testCommand').description('Submaster command name')
+})
+
+ErrorManager.register('ServiceManager', 'SM_SERVICE_STOP_TIMEOUT',
+  'Graceful service stop timed out, the worker was force-terminated. Its container (and possibly journal tail) may not have shut down cleanly', {
+  id: Rule.string().example('testid').description('Service ID')
 })
 
 export default class ServiceManager extends Device {
@@ -46,11 +51,11 @@ export default class ServiceManager extends Device {
   }
   outputs(): { [key: string]: BasicPort; } {
     return {
-      'register.command': Port.standart().description('Register command into master'),
+      'register.command': Port.standard().description('Register command into master'),
       'worker.add': Port.return().description('Run new worker for service'),
       'worker.stop': Port.return().description('Stop service worker '),
       'worker.request': Port.return().description('Send request to worker'),
-      'broadcast': Port.standart().description('Send broadcast port'),
+      'broadcast': Port.standard().description('Send broadcast port'),
     }
   }
 
@@ -63,6 +68,7 @@ export default class ServiceManager extends Device {
   options!: { 
     autoStart: boolean,
     autoReload: boolean,
+    stopTimeout: number,
     printErrors: boolean,
     ignoreAutoReloadErrors: Array<string>,
     servicesDirs: Array<{ dir: string, generate: boolean }>
@@ -72,6 +78,7 @@ export default class ServiceManager extends Device {
     return {
       autoStart: Rule.boolean().default(true).required().description('Global control for autostart services at VRack start'),
       autoReload: Rule.boolean().default(true).required().description('Global control for autoReload services if it crached'),
+      stopTimeout: Rule.number().integer().min(100).default(5000).required().description('Graceful service stop timeout (ms): max time to wait for the worker to stop its own container and exit before force-terminating it'),
       printErrors: Rule.boolean().default(true).required().description('Print errros if service is crashed'),
       ignoreAutoReloadErrors: Rule.array().default([
         'CTR_CONF_EXTENDS_PROBLEM',
@@ -429,15 +436,37 @@ export default class ServiceManager extends Device {
       return conf
     }
     if (!conf.run) throw ErrorManager.make('SM_SERVICE_NOT_RUN')
+    // Явный стоп — терминальное состояние: не даем autoReload возродить сервис,
+    // даже если воркер сообщит об ошибке graceful-остановки и затем завершится
+    conf.autoReload = false
+    const wid = this.servicesWorker[conf.id]
+    let timedOut = false
+    // Страховка от зависшего воркера: по таймауту принудительно убиваем его.
+    // unref — чтобы хвост таймера не держал процесс main живым при глобальном завершении
+    const killer = setTimeout(() => {
+      timedOut = true
+      try { this.ports.output['worker.stop'].push({ id: wid }).catch(() => { }) } catch (e) { /* worker уже мог исчезнуть */ }
+    }, Number(this.options.stopTimeout))
+    killer.unref?.()
     try {
-      await this.ports.output['worker.stop'].push({ id: this.servicesWorker[conf.id] })
-      this.Container.emit('ServiceManager.service.stop', { service: conf })
-      return conf
+      // Грациозная фаза: воркер сам останавливает свой контейнер устройств
+      // (stop/stopPromise хуки, журнал фиксируется в ServiceLogger.stopPromise) и завершает поток.
+      // Штатный исход — WM_WORKER_EXIT: pending-запрос отклоняется обработчиком exit события
+      await this.inputSubmaster(this.makeServiceRequest('serviceStop', { service: conf.id }))
     } catch (error) {
-      this.broadcastUpdate([conf.id])
-      if (error instanceof CoreError && error.vShort === 'WM_WORKER_EXIT') return 'success'
-      throw error
+      if (!(error instanceof CoreError && error.vShort === 'WM_WORKER_EXIT')) throw error
+      if (timedOut) this.addError(conf.id, ErrorManager.make('SM_SERVICE_STOP_TIMEOUT', { id: conf.id }))
+    } finally {
+      clearTimeout(killer)
     }
+    try {
+      // Финальная страховка: принудительная остановка (no-op, если воркер уже сам завершился)
+      await this.ports.output['worker.stop'].push({ id: wid })
+    } catch (error) {
+      if (!(error instanceof CoreError && error.vShort === 'WM_WORKER_EXIT')) throw error
+    }
+    this.Container.emit('ServiceManager.service.stop', { service: conf })
+    return conf
   }
 
   /***
@@ -486,7 +515,13 @@ export default class ServiceManager extends Device {
     const ret = []
     if (this.servicesErrors[data.service]) {
       for (const er of this.servicesErrors[data.service]) {
-        for (const rer of er.vAddErrors) ret.push(rer)
+        if (er.vAddErrors && er.vAddErrors.length > 0) {
+          for (const rer of er.vAddErrors) ret.push(rer)
+        } else {
+          // Топ-уровневая ошибка без вложенных — возвращаем саму себя,
+          // иначе она была бы невидима (например, SM_SERVICE_STOP_TIMEOUT)
+          ret.push(er)
+        }
       }
     }
     return ret

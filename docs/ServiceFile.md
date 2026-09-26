@@ -192,7 +192,8 @@ module.exports = a
     "description" : "Небольшое описание сервиса",
     "autoStart": false,
     "autoReload": false,
-    "isolated": false
+    "isolated": false,
+    "journal": false
 }
 ```
 
@@ -204,6 +205,7 @@ module.exports = a
  * **autoStart** *boolean* - Если `true` сервис будет запущен после старта VRack
  * **autoReload** *boolean* - Если `true` сервис будет перезапущен, если он завершит свою работу в связи с ошибкой
  * **isolated** *boolean* - Если `true` сервис будет запщуен в отдельном процессе для изоляции кода, см [Работа с LL интерфейсами: I²C, Serial...](./LLHardware.md)
+ * **journal** *boolean* - Если `true` для сервиса включается in-memory журнал: исходящие порт-пуши и события устройств (`notify`/`alert`/`event`/`terminal`/`error`/`terminate`). Держатся последние 1000 записей, одинаковые последовательные значения в пределах 5 секунд компактируются в одну запись (`n` — количество повторений). Чтение — команда `serviceLog` / MCP-инструмент `service_log`, очистка — `serviceLogClear` / `service_log_clear`
 
 ## Переопределение конфигурации сервис-файла
 

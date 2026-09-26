@@ -76,9 +76,9 @@ class Timer extends Device {
      * */ 
     inputs() {
         return {
-            'start': Port.standart().description('Запуск таймера'),
-            'stop': Port.standart().description('Остановка таймера'),
-            'reset': Port.standart().description('Сброс счетчика'),
+            'start': Port.standard().description('Запуск таймера'),
+            'stop': Port.standard().description('Остановка таймера'),
+            'reset': Port.standard().description('Сброс счетчика'),
         }
     }
     /**
@@ -86,7 +86,7 @@ class Timer extends Device {
      * */
     outputs() {
         return {
-            'tick': Port.standart().description('Выход сигнала таймера')
+            'tick': Port.standard().description('Выход сигнала таймера')
         }
     }
 
@@ -112,7 +112,7 @@ module.exports = Timer;
 
 Есть 2 типа портов - стардартный и возвращаемый. 
 
-Тип `Port.standart()` - означает, что мы используем стандартный тип порта. Такие порты используются для вызова события устройства и передачи данных в него. 
+Тип `Port.standard()` - означает, что мы используем стандартный тип порта. Такие порты используются для вызова события устройства и передачи данных в него. 
 
 Тип - `Port.return()` - используется, когда порт должен возвращать значение. Разные типы портов не совместимы между друг другом.
 
@@ -169,16 +169,16 @@ class Timer extends Device {
     /** Метод должен вернуть список входящих портов устройства */ 
     inputs() {
         return {
-            'start': Port.standart().description('Запуск таймера'),
-            'stop': Port.standart().description('Остановка таймера'),
-            'reset': Port.standart().description('Сброс счетчика'),
+            'start': Port.standard().description('Запуск таймера'),
+            'stop': Port.standard().description('Остановка таймера'),
+            'reset': Port.standard().description('Сброс счетчика'),
         }
     }
 
     /** Метод должен вернуть список исходящих портов устройства */
     outputs() {
         return {
-            'tick': Port.standart().description('Выход сигнала таймера')
+            'tick': Port.standard().description('Выход сигнала таймера')
         }
     }
 
@@ -298,7 +298,7 @@ class CpuInfo extends Device {
      * */ 
     inputs() {
         return {
-            'gate': Port.standart().description('Принимает сигнал для посчета информации о CPU')
+            'gate': Port.standard().description('Принимает сигнал для посчета информации о CPU')
         }
     }
 
@@ -359,7 +359,7 @@ class CpuInfo extends Device {
     /** Метод должен вернуть список входящих портов устройства */ 
     inputs() {
         return {
-            'gate': Port.standart().description('Принимает сигнал для посчета информации о CPU')
+            'gate': Port.standard().description('Принимает сигнал для посчета информации о CPU')
         }
     }
 

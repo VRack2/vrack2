@@ -14,14 +14,14 @@ export default class WSProvider extends Device {
   outputs(): { [key: string]: BasicPort; } {
     return {
       command: Port.return().description('Port for client command request'),
-      register: Port.standart().description('Client register'),
-      unregister: Port.standart().description('Client unregister')
+      register: Port.standard().description('Client register'),
+      unregister: Port.standard().description('Client unregister')
     }
   }
 
   inputs(): { [key: string]: BasicPort; } {
     return {
-      send: Port.standart().description('To client send port')
+      send: Port.standard().description('To client send port')
     }
   }
 

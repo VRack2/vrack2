@@ -21,13 +21,13 @@ class ProvidersClients extends vrack2_core_1.Device {
             'client%d.command': vrack2_core_1.Port.return()
                 .dynamic(this.options.providers)
                 .description('Port for clients commands'),
-            'client%d.register': vrack2_core_1.Port.standart()
+            'client%d.register': vrack2_core_1.Port.standard()
                 .dynamic(this.options.providers)
                 .description('Register client'),
-            'client%d.unregister': vrack2_core_1.Port.standart()
+            'client%d.unregister': vrack2_core_1.Port.standard()
                 .dynamic(this.options.providers)
                 .description('Unregister client'),
-            'client.send': vrack2_core_1.Port.standart()
+            'client.send': vrack2_core_1.Port.standard()
                 .description('Sending a message to a specific client')
         };
     }
@@ -35,11 +35,11 @@ class ProvidersClients extends vrack2_core_1.Device {
         return {
             'clients.command': vrack2_core_1.Port.return()
                 .description('Client command'),
-            'clients.register': vrack2_core_1.Port.standart()
+            'clients.register': vrack2_core_1.Port.standard()
                 .description('Client register event'),
-            'clients.unregister': vrack2_core_1.Port.standart()
+            'clients.unregister': vrack2_core_1.Port.standard()
                 .description('Client unregister event'),
-            'provider%d.send': vrack2_core_1.Port.standart().dynamic(this.options.providers)
+            'provider%d.send': vrack2_core_1.Port.standard().dynamic(this.options.providers)
                 .description('Send data to provider')
         };
     }

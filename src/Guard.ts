@@ -12,14 +12,14 @@ import IBroadcast from "./interfaces/IBroadcast";
 import IApiKey from "./interfaces/IApiKey";
 
 ErrorManager.register(
-    'Guard', 'BJZHVPRFLTUS', 'GUARD_CLIENT_NOT_REGISTERED',
+    'Guard', 'GUARD_CLIENT_NOT_REGISTERED',
     'Somehow it happened that the client was not registered, but a request came from him.', {
     providerId: Rule.number().min(0).integer().required(),
     clientId: Rule.number().min(0).integer().required()
 })
 
 ErrorManager.register(
-    'Guard', 'CDCQSCNGOONF', 'GUARD_INCORRECT_CLIENT_JSON',
+    'Guard', 'GUARD_INCORRECT_CLIENT_JSON',
     'The client sent data in the request that does not comply with the json format.',
     {
         err: Rule.string().description('Error message')
@@ -27,29 +27,29 @@ ErrorManager.register(
 )
 
 ErrorManager.register(
-    'Guard', 'PBGE8IBZPYSC', 'GUARD_CLIENT_NOT_AUTH',
+    'Guard', 'GUARD_CLIENT_NOT_AUTH',
     'You are not authenticated. Please use the apiKeyAuth command before'
 )
 
 ErrorManager.register(
-    'Guard', 'OJ2QOE4AR2FP', 'GUARD_VERIFICATION_FAILED',
+    'Guard', 'GUARD_VERIFICATION_FAILED',
     'Incorrect verification code'
 )
 
 ErrorManager.register(
-    'Guard', '41N3V60MZNTJ', 'GUARD_DECIPHER_FAILED',
+    'Guard', 'GUARD_DECIPHER_FAILED',
     'Error while decrypting data', {
     error: Rule.string().description('Error description string')
 })
 
 ErrorManager.register(
-    'Guard', 'TPW82KB3TI2O', 'GUARD_CIPHER_FAILED',
+    'Guard', 'GUARD_CIPHER_FAILED',
     'Error while crypting data', {
     error: Rule.string().description('Error description string')
 })
 
 ErrorManager.register(
-    'Guard', 'MGYZHDMPBOBR', 'GUARD_PRIVATE_VERIFICATION_FAILED',
+    'Guard', 'GUARD_PRIVATE_VERIFICATION_FAILED',
     'Error while decrypting data')
 
 
@@ -75,17 +75,17 @@ export default class Guard extends Device {
     inputs(): { [key: string]: BasicPort; } {
         return {
             'clients.command': Port.return().description('Command sending port from Clients'),
-            'clients.register': Port.standart().description('Register Clients port'),
-            'clients.unregister': Port.standart().description('Unregister Clients port'),
-            'broadcast': Port.standart().description('Port for send broadcast to clients'),
+            'clients.register': Port.standard().description('Register Clients port'),
+            'clients.unregister': Port.standard().description('Unregister Clients port'),
+            'broadcast': Port.standard().description('Port for send broadcast to clients'),
         }
     }
 
     outputs(): { [key: string]: BasicPort; } {
         return {
             'master.command': Port.return().description('Port for master commands'),
-            'register.command': Port.standart().description('Register command into master'),
-            'client.send': Port.standart().description('Send data to client'),
+            'register.command': Port.standard().description('Register command into master'),
+            'client.send': Port.standard().description('Send data to client'),
         }
     }
 

@@ -23,7 +23,7 @@ class System extends vrack2_core_1.Device {
     }
     outputs() {
         return {
-            'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
+            'register.command': vrack2_core_1.Port.standard().description('Register command into master'),
         };
     }
     metrics() {
@@ -197,8 +197,8 @@ class System extends vrack2_core_1.Device {
      *
     */
     apiGetSystemInfo() {
-        var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             const getCpuInfo = () => {
                 const cpus = os_1.default.cpus();
                 if (!cpus || cpus.length === 0) {

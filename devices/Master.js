@@ -10,14 +10,14 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
-vrack2_core_1.ErrorManager.register('Master', 'QHALOLOQBEMN', 'MASTER_COMMAND_NOT_FOUND', 'The master did not find a suitable registered command', {
+vrack2_core_1.ErrorManager.register('Master', 'MASTER_COMMAND_NOT_FOUND', 'The master did not find a suitable registered command', {
     command: vrack2_core_1.Rule.string().description('Input command')
 });
-vrack2_core_1.ErrorManager.register('Master', 'URDWFPFHKEAA', 'MASTER_NO_REQ_DATA', 'It is necessary to specify the command and the data for it');
-vrack2_core_1.ErrorManager.register('Master', 'ZEAJYEQFWCUM', 'MASTER_ACCESS_DENIED', 'You need to raise the access level to execute this command', {
+vrack2_core_1.ErrorManager.register('Master', 'MASTER_NO_REQ_DATA', 'It is necessary to specify the command and the data for it');
+vrack2_core_1.ErrorManager.register('Master', 'MASTER_ACCESS_DENIED', 'You need to raise the access level to execute this command', {
     level: vrack2_core_1.Rule.number().description('Requiered level')
 });
-vrack2_core_1.ErrorManager.register('Master', 'JTTWDXLMPKXD', 'MASTER_ERROR_VALIDATION', 'The data does not meet the teams requirements');
+vrack2_core_1.ErrorManager.register('Master', 'MASTER_ERROR_VALIDATION', 'The data does not meet the teams requirements');
 class Master extends vrack2_core_1.Device {
     constructor() {
         super(...arguments);
@@ -31,7 +31,7 @@ class Master extends vrack2_core_1.Device {
     inputs() {
         const ports = {
             'command%d': vrack2_core_1.Port.return().dynamic(this.options.commandPorts).requirement(vrack2_core_1.Rule.object().example({}).description('')),
-            'register%d': vrack2_core_1.Port.standart().dynamic(this.options.registerPorts)
+            'register%d': vrack2_core_1.Port.standard().dynamic(this.options.registerPorts)
         };
         return ports;
     }

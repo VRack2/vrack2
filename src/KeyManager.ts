@@ -20,7 +20,6 @@ const defaultKey: IApiKey = {
 
 ErrorManager.register(
     'KeyManager',
-    '8CDGXUV915LH',
     'AKEYM_KEY_NOT_FOUND',
     'A non-existent key identifier was specified.'
 )
@@ -40,7 +39,7 @@ export default class KeyManager extends Device {
 
     outputs(): { [key: string]: BasicPort; } {
         return {
-            'register.command': Port.standart().description('Register command into master'),
+            'register.command': Port.standard().description('Register command into master'),
         }
     }
     

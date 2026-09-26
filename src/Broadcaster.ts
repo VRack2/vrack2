@@ -18,16 +18,16 @@ export default class Broadcaster extends Device {
 
     inputs(): { [key: string]: BasicPort; } {
         return {
-            'clients.broadcast%d': Port.standart().dynamic(this.options.broadcastInputs).description('Broadcast to clients port'),
-            'clients.register': Port.standart().description('Register client port'),
-            'clients.unregister': Port.standart().description('Unregister client port')
+            'clients.broadcast%d': Port.standard().dynamic(this.options.broadcastInputs).description('Broadcast to clients port'),
+            'clients.register': Port.standard().description('Register client port'),
+            'clients.unregister': Port.standard().description('Unregister client port')
         }
     }
 
     outputs(): { [key: string]: BasicPort; } {
         return {
-            'register.command': Port.standart().description('Register command into master'),
-            'guard.broadcast': Port.standart().description('Guard broadcast send')
+            'register.command': Port.standard().description('Register command into master'),
+            'guard.broadcast': Port.standard().description('Guard broadcast send')
         }
     }
 

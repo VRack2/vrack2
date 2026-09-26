@@ -9,7 +9,7 @@
     - [Правила именования портов](#правила-именования-портов)
     - [Правила именования обработчиков портов](#правила-именования-обработчиков-портов)
     - [Типы портов](#типы-портов)
-      - [Стандартный `Port.standart()`](#стандартный-portstandart)
+      - [Стандартный `Port.standard()`](#стандартный-portstandard)
       - [Возвращаемый `Port.return()`](#возвращаемый-portreturn)
     - [Динамические порты](#динамические-порты)
   - [Action (Экшены)](#action-экшены)
@@ -149,15 +149,15 @@ class MyDevice extends Device {
     /** Определение списка входов */
     inputs(){
         return {
-            'console.log': Port.standart().description('Порт для вывода данных в консоль'),
-            'console.error': Port.standart().description('Порт для вывода ошибки в консоль')
+            'console.log': Port.standard().description('Порт для вывода данных в консоль'),
+            'console.error': Port.standard().description('Порт для вывода ошибки в консоль')
         }
     }
 
     /** Определение списка выходов */
     outputs(){
         return {
-            gate: Port.standart().description('Сигнальный выход')
+            gate: Port.standard().description('Сигнальный выход')
         }
     }
 
@@ -215,7 +215,7 @@ module.exports = MyDevice;
 
 В VRack2 есть 2 типа портов - стандартные и возвращаемые. Порты **разного типа несовместимы** между собой. 
 
-#### Стандартный `Port.standart()`
+#### Стандартный `Port.standard()`
 
  - Один выход → несколько входов
  - Не поддерживают возврат значений
@@ -274,7 +274,7 @@ const res: IProviderMessage = await this.ports.output.command.push(req)
       return {
           // dynamic(number) определяет количество динамических портов
           // %d будет заменен на порядковый номер порта - 1,2,3,4,5,6,7,8
-          'console.log%d': Port.standart().dynamic(this.options.logs).description('Порт для вывода данных в консоль'),
+          'console.log%d': Port.standard().dynamic(this.options.logs).description('Порт для вывода данных в консоль'),
       }
   }
 
@@ -311,9 +311,9 @@ const res: IProviderMessage = await this.ports.output.command.push(req)
         /**
          * В таком случае будет созданые группы портов схеме будут объеденяться на схеме
         */
-        'group%d.log': Port.standart().dynamic(this.options.groups),
-        'group%d.error': Port.standart().dynamic(this.options.groups),
-        'group%d.notify': Port.standart().dynamic(this.options.groups),
+        'group%d.log': Port.standard().dynamic(this.options.groups),
+        'group%d.error': Port.standard().dynamic(this.options.groups),
+        'group%d.notify': Port.standard().dynamic(this.options.groups),
     }
   }
 ```
@@ -438,7 +438,7 @@ class MyDevice extends Device {
     /** Определение списка входов */
     inputs(){
         return {
-            'console.log': Port.standart().description('Порт для вывода данных в консоль'),
+            'console.log': Port.standard().description('Порт для вывода данных в консоль'),
         }
     }
 
@@ -514,7 +514,7 @@ class MyDevice extends Device {
     /** Определение списка входов */
     inputs(){
         return {
-            'console.log': Port.standart().description('Порт для вывода данных в консоль'),
+            'console.log': Port.standard().description('Порт для вывода данных в консоль'),
         }
     }
 
@@ -553,7 +553,7 @@ class MyDevice extends Device {
     /** Определение списка входов */
     inputs(){
         return {
-            'set.cache': Port.standart(),
+            'set.cache': Port.standard(),
         }
     }
 

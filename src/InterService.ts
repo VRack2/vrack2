@@ -4,7 +4,6 @@ import WorkerProvider from './WorkerProvider';
 
 ErrorManager.register(
     'InterService',
-    'SC3AHS7GZUTZ',
     'INTER_SERVICE_PROCESS_ERROR',
     'You are trying to run a device outside of a service container. This device can only run inside a service with WorkerProvider'
   )

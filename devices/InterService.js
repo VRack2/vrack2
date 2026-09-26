@@ -1,7 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
-vrack2_core_1.ErrorManager.register('InterService', 'SC3AHS7GZUTZ', 'INTER_SERVICE_PROCESS_ERROR', 'You are trying to run a device outside of a service container. This device can only run inside a service with WorkerProvider');
+vrack2_core_1.ErrorManager.register('InterService', 'INTER_SERVICE_PROCESS_ERROR', 'You are trying to run a device outside of a service container. This device can only run inside a service with WorkerProvider');
 /**
  * A device that can execute commands outside its service (the service of VRack2 itself).
  * This allows executing actions or accessing ports of another service.

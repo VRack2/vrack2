@@ -16,11 +16,11 @@ import IDevicePushRequest from "./interfaces/IDevicePushRequest";
 import { ICommandExport } from "./Master";
 
 
-ErrorManager.register('Service', 'UYWBAXO4GEB1', 'SERVICE_CONTAINER_ERROR', 'An error occurred while loading the container. The reason may be - an incorrect scheme or an error initializing the device. This is a general container loading error, see the nested error inside this')
-ErrorManager.register('Service', 'OFPCDVLAH535', 'SERVICE_CONTAINER_TERMINATE', 'The error occurred because some device called the termination method. See the nested error inside this', {
+ErrorManager.register('Service', 'SERVICE_CONTAINER_ERROR', 'An error occurred while loading the container. The reason may be - an incorrect scheme or an error initializing the device. This is a general container loading error, see the nested error inside this')
+ErrorManager.register('Service', 'SERVICE_CONTAINER_TERMINATE', 'The error occurred because some device called the termination method. See the nested error inside this', {
     device: Rule.string().default('').description('Device ID')
 })
-ErrorManager.register('Service', 'OVD06P5ZF9RV', 'SERVICE_CAPTURE_PORT_TIMEOUT', 'Timeout occurred while waiting for device output capture')
+ErrorManager.register('Service', 'SERVICE_CAPTURE_PORT_TIMEOUT', 'Timeout occurred while waiting for device output capture')
 export default class Serivce extends Device {
 
     description(): string {
@@ -31,10 +31,11 @@ export default class Serivce extends Device {
 
     outputs(): { [key: string]: BasicPort; } {
         return {
-            send: Port.standart().description('Send data to parent process'),
-            broadcast: Port.standart().description('Send broadcast to client'),
+            send: Port.standard().description('Send data to parent process'),
+            broadcast: Port.standard().description('Send broadcast to client'),
             'master.command': Port.return().description('Run master command'),
-            'register.command': Port.standart().description('Register command into master'),
+            'register.command': Port.standard().description('Register command into master'),
+            container: Port.standard().description('Emits the live Container of the started service'),
         }
     }
 
@@ -77,7 +78,7 @@ export default class Serivce extends Device {
     /**
      * Service container
     */
-    ServiceContainer: Container = new Container('', {} as IServiceStructure, {} as Bootstrap);
+    ServiceContainer: Container = new Container('', {} as Bootstrap);
 
     /**
      * Service info (getting from service manager)
@@ -152,6 +153,17 @@ export default class Serivce extends Device {
             },
         })
 
+        this.ports.output['register.command'].push({
+            command: 'serviceStop',
+            description: 'Internal service command for graceful stop of the container and worker self-exit',
+            level: 0,
+            owner: this.type,
+            handler: this.apiServiceStop.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+            },
+        })
+
 
         this.ports.output['register.command'].push({
             command: 'serviceShares',
@@ -190,6 +202,77 @@ export default class Serivce extends Device {
                 port: Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
                 data: Rule.any().required().example(1).description('Data for push into port')
             },
+        })
+
+        this.ports.output['register.command'].push({
+            command: 'serviceDeviceShares',
+            description: 'Get current shares data of a device',
+            level: 1,
+            owner: this.type,
+            handler: this.apiServiceDeviceShares.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: Rule.object().description('Current shares data of the device')
+        })
+
+        this.ports.output['register.command'].push({
+            command: 'deviceStop',
+            description: 'Stop a running device in the service container (device stop() + stopPromise()). Reversible and idempotent - a device that is not running is a no-op.',
+            level: 1,
+            owner: this.type,
+            handler: this.apiDeviceStop.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: Rule.object().fields({
+                device: Rule.string().example('DeviceID').description('Device id'),
+                started: Rule.boolean().example(false).description('Whether the device is running (started) after the call'),
+            }).description('Device state after the stop')
+        })
+
+        this.ports.output['register.command'].push({
+            command: 'deviceProcess',
+            description: 'Start (process) a device in the service container (device process() + processPromise()). Idempotent - an already started device is a no-op.',
+            level: 1,
+            owner: this.type,
+            handler: this.apiDeviceProcess.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: Rule.object().fields({
+                device: Rule.string().example('DeviceID').description('Device id'),
+                started: Rule.boolean().example(true).description('Whether the device is running (started) after the call'),
+            }).description('Device state after the process')
+        })
+
+        this.ports.output['register.command'].push({
+            command: 'deviceStatus',
+            description: 'Read the lifecycle status of a device in the service container (state registered/started/stopped, since timestamp, last alert/error, counters). Read-only - no mutations.',
+            level: 1,
+            owner: this.type,
+            handler: this.apiDeviceStatus.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: Rule.object().fields({
+                device: Rule.string().example('DeviceID').description('Device id'),
+                started: Rule.boolean().example(true).description('Whether the device is running (started)'),
+                status: Rule.object().fields({
+                    id: Rule.string().example('DeviceID').description('Device id'),
+                    type: Rule.string().example('vendor.Device').description('Device type'),
+                    state: Rule.string().example('started').description("Lifecycle state: 'registered' | 'started' | 'stopped'"),
+                    since: Rule.number().example(1700000000000).description('Date.now() of the last status change (ms)'),
+                    lastAlert: Rule.any().description('Last alert message (device.alert), or null'),
+                    lastError: Rule.any().description('Last error / terminate message, or null'),
+                    alertCount: Rule.number().integer().example(0).description('Number of alerts since registration'),
+                    errorCount: Rule.number().integer().example(0).description('Number of errors (including terminate) since registration'),
+                }).description('Systematized device status record maintained by the container'),
+            }).description('Device lifecycle status')
         })
 
         this.ports.output['register.command'].push({
@@ -385,6 +468,9 @@ export default class Serivce extends Device {
         this.ServiceContainer.meta = data.meta
         this.Serviceinfo = data.info
         this.ServiceMeta = data.meta
+        // Пробрасываем контейнер и мета сразу после создания (до run()),
+        // чтобы внешнее устройство (ServiceLogger) успело подписаться на события запуска
+        this.ports.output['container'].push({ container: this.ServiceContainer, meta: data.meta })
         await this.bindRenderEvent()
         await this.bindTerminate()
         MainProcessEx.run()
@@ -417,6 +503,56 @@ export default class Serivce extends Device {
         const device = this.ServiceContainer.devices[data.device]
         if (!device.ports.input[data.port]) throw ErrorManager.make('CTR_DEVICE_PORT_NF')    
         return device.ports.input[data.port].push(data.data)
+    }
+
+    /**
+     * Get current shares data of a device
+    */
+    async apiServiceDeviceShares(data: { service: string, device: string }, gData: IGuardMessage) {
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF')
+        return this.ServiceContainer.devices[data.device].sharesSnapshot()
+    }
+
+    /**
+     * Stop a running device in the service container
+     *
+     * Delegates to `Container.stopDevice()`: calls device `stop()`, then
+     * `await stopPromise()`, then marks it stopped. Reversible (can be started
+     * again via `deviceProcess`) and idempotent - a device that is not running
+     * is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     */
+    async apiDeviceStop(data: { service: string, device: string }, gData: IGuardMessage) {
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF', { device: data.device })
+        await this.ServiceContainer.stopDevice(data.device)
+        return { device: data.device, started: this.ServiceContainer.isStarted(data.device) }
+    }
+
+    /**
+     * Start (process) a device in the service container
+     *
+     * Delegates to `Container.startDevice()`: calls device `process()`, then
+     * `await processPromise()`, then marks it started. Idempotent - an already
+     * started device is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     */
+    async apiDeviceProcess(data: { service: string, device: string }, gData: IGuardMessage) {
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF', { device: data.device })
+        await this.ServiceContainer.startDevice(data.device)
+        return { device: data.device, started: this.ServiceContainer.isStarted(data.device) }
+    }
+
+    /**
+     * Read the lifecycle status of a device in the service container
+     *
+     * Delegates to `Container.getDeviceStatus()`: the container-maintained
+     * record (state registered/started/stopped, since, last alert/error,
+     * counters). Read-only - no mutations. Throws CTR_DEVICE_NF if the
+     * device id is unknown.
+     */
+    async apiDeviceStatus(data: { service: string, device: string }, gData: IGuardMessage) {
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF', { device: data.device })
+        const status = this.ServiceContainer.getDeviceStatus(data.device)
+        if (!status) throw ErrorManager.make('CTR_DEVICE_NF', { device: data.device })
+        return { device: data.device, started: status.state === 'started', status }
     }
 
     /**
@@ -481,6 +617,7 @@ export default class Serivce extends Device {
      * Getting device metric
     */
     async apiServiceDeviceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF')
         const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', DeviceMetrics) as DeviceMetrics
         let precision: string | number = data.precision
         if (!isNaN(parseInt(precision))) precision = parseInt(precision)
@@ -494,6 +631,7 @@ export default class Serivce extends Device {
      * Obtaining system metrics. Those that were initialized at the VRack2 level
      */
     async apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
+        if (!this.Container.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF')
         const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', DeviceMetrics) as DeviceMetrics
         let precision: string | number = data.precision
         if (!isNaN(parseInt(precision))) precision = parseInt(precision)
@@ -627,8 +765,42 @@ export default class Serivce extends Device {
     // }
 
     /**
+     * Graceful stop of the running service container and worker self-exit.
+     *
+     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `stop()` / `await stopPromise()` hooks).
+     * 2) Our own container `stopAll()` — ServiceLogger's `stopPromise()` flushes the journal to disk;
+     *    Container.stopDevice awaits each device's stopPromise(), so the write completes before exit.
+     * 3) The worker exits on its own: this thread was spawned for the service, and nobody else will terminate it.
+     *    On the main side the pending request is rejected with WM_WORKER_EXIT by the exit handler — a normal outcome.
+     */
+    async apiServiceStop(data: { service: string }, gData: IGuardMessage) {
+        if (!this.ServiceContainer) throw ErrorManager.make('SERVICE_CONTAINER_ERROR')
+
+        // Останавливаем контейнер пользователя, сохраняя первую ошибку для уведомления main
+        let err = null
+        try {
+            await this.ServiceContainer.stopAll()
+        } catch (e) {
+            err = e as Error
+        }
+
+        // Останавливаем свой контейнер: ServiceLogger.stopPromise() дописывает журнал в базу.
+        // Ошибки остановки своего контейнера не блокируют выход воркера
+        try {
+            await this.Container.stopAll()
+        } catch (e) {
+            console.error(`[Service] failed to stop worker container: ${(e as Error).message}`)
+        }
+
+        // Ошибка graceful-остановки: уведомляем main, пока каналы живы, и завершаем поток.
+        // Main сбросил conf.autoReload перед командой, поэтому exit не вызовет автоперезапуск
+        if (err) return this.serviceTerminate(err)
+        process.exit(0)
+    }
+
+    /**
      * Send termiate errro and terminate service process
-    */
+     */
     protected serviceTerminate(error: Error) {
         this.ports.output['send'].push({
             command: 'error',

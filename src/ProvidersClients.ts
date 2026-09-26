@@ -24,13 +24,13 @@ export default class ProvidersClients extends Device {
             'client%d.command': Port.return()
                 .dynamic(this.options.providers)
                 .description('Port for clients commands'),
-            'client%d.register': Port.standart()
+            'client%d.register': Port.standard()
                 .dynamic(this.options.providers)
                 .description('Register client'),
-            'client%d.unregister': Port.standart()
+            'client%d.unregister': Port.standard()
                 .dynamic(this.options.providers)
                 .description('Unregister client'),
-            'client.send': Port.standart()
+            'client.send': Port.standard()
                 .description('Sending a message to a specific client')
         }
     }
@@ -39,11 +39,11 @@ export default class ProvidersClients extends Device {
         return {
             'clients.command': Port.return()
                 .description('Client command'),
-            'clients.register': Port.standart()
+            'clients.register': Port.standard()
                 .description('Client register event'),
-            'clients.unregister': Port.standart()
+            'clients.unregister': Port.standard()
                 .description('Client unregister event'),
-            'provider%d.send': Port.standart().dynamic(this.options.providers)
+            'provider%d.send': Port.standard().dynamic(this.options.providers)
                 .description('Send data to provider')
         }
     }

@@ -10,7 +10,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
-vrack2_core_1.ErrorManager.register('WorkerProvider', 'O0LWU331YS7J', 'WP_INTERNAL_COMMAND_ERROR', 'An error occurred while executing an internal command that the service sent to VRACK.');
+vrack2_core_1.ErrorManager.register('WorkerProvider', 'WP_INTERNAL_COMMAND_ERROR', 'An error occurred while executing an internal command that the service sent to VRACK.');
 class WorkerProvider extends vrack2_core_1.Device {
     constructor() {
         super(...arguments);
@@ -29,8 +29,8 @@ class WorkerProvider extends vrack2_core_1.Device {
     }
     inputs() {
         return {
-            send: vrack2_core_1.Port.standart().description('Send data to parent process'),
-            broadcast: vrack2_core_1.Port.standart().description('Send broadcast to client'),
+            send: vrack2_core_1.Port.standard().description('Send data to parent process'),
+            broadcast: vrack2_core_1.Port.standard().description('Send broadcast to client'),
             internal: vrack2_core_1.Port.return().description('Request internal command'),
         };
     }

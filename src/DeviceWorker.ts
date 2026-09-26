@@ -9,7 +9,7 @@ export default class DeviceWorker extends Device {
 
   outputs(): { [key: string]: BasicPort; } {
     return {
-      'register.command': Port.standart().description('Register command into master'),
+      'register.command': Port.standard().description('Register command into master'),
     }
   }
 

@@ -11,7 +11,7 @@ interface IInternalMessage extends IGuardMessage {
     resultData: any;
 }
 
-ErrorManager.register('WorkerProvider', 'O0LWU331YS7J', 'WP_INTERNAL_COMMAND_ERROR',
+ErrorManager.register('WorkerProvider', 'WP_INTERNAL_COMMAND_ERROR',
     'An error occurred while executing an internal command that the service sent to VRACK.')
 
 export default class WorkerProvider extends Device {
@@ -30,8 +30,8 @@ export default class WorkerProvider extends Device {
 
     inputs(): { [key: string]: BasicPort; } {
         return {
-            send: Port.standart().description('Send data to parent process'),
-            broadcast: Port.standart().description('Send broadcast to client'),
+            send: Port.standard().description('Send data to parent process'),
+            broadcast: Port.standard().description('Send broadcast to client'),
             internal: Port.return().description('Request internal command'),
         }
     }

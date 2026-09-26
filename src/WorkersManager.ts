@@ -7,8 +7,8 @@ import IBroadcast from "./interfaces/IBroadcast";
 
 
 
-ErrorManager.register('WorkersManager','ASF6TC4U7J6P', 'WM_INTERNAL_ERROR', 'An error occurred within the service being used, causing it to terminate.')
-ErrorManager.register('WorkersManager','U4HUK15C0UVO', 'WM_WORKER_EXIT', 'The workers job was terminated, all tasks were deleted.')
+ErrorManager.register('WorkersManager','WM_INTERNAL_ERROR', 'An error occurred within the service being used, causing it to terminate.')
+ErrorManager.register('WorkersManager','WM_WORKER_EXIT', 'The workers job was terminated, all tasks were deleted.')
 
 
 /**
@@ -67,7 +67,7 @@ export default class WorkersManager extends Device {
     outputs(): { [key: string]: BasicPort; } {
         return {
             'master.command': Port.return(),
-            'broadcast': Port.standart()
+            'broadcast': Port.standard()
         }
     }
 

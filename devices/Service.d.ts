@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { Container, Device, MainProcess, BasicMetric } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
@@ -113,6 +112,58 @@ export default class Serivce extends Device {
     */
     apiServiceDevicePush(data: IDevicePushRequest, gData: IGuardMessage): Promise<any>;
     /**
+     * Get current shares data of a device
+    */
+    apiServiceDeviceShares(data: {
+        service: string;
+        device: string;
+    }, gData: IGuardMessage): Promise<Record<string, any>>;
+    /**
+     * Stop a running device in the service container
+     *
+     * Delegates to `Container.stopDevice()`: calls device `stop()`, then
+     * `await stopPromise()`, then marks it stopped. Reversible (can be started
+     * again via `deviceProcess`) and idempotent - a device that is not running
+     * is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     */
+    apiDeviceStop(data: {
+        service: string;
+        device: string;
+    }, gData: IGuardMessage): Promise<{
+        device: string;
+        started: boolean;
+    }>;
+    /**
+     * Start (process) a device in the service container
+     *
+     * Delegates to `Container.startDevice()`: calls device `process()`, then
+     * `await processPromise()`, then marks it started. Idempotent - an already
+     * started device is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     */
+    apiDeviceProcess(data: {
+        service: string;
+        device: string;
+    }, gData: IGuardMessage): Promise<{
+        device: string;
+        started: boolean;
+    }>;
+    /**
+     * Read the lifecycle status of a device in the service container
+     *
+     * Delegates to `Container.getDeviceStatus()`: the container-maintained
+     * record (state registered/started/stopped, since, last alert/error,
+     * counters). Read-only - no mutations. Throws CTR_DEVICE_NF if the
+     * device id is unknown.
+     */
+    apiDeviceStatus(data: {
+        service: string;
+        device: string;
+    }, gData: IGuardMessage): Promise<{
+        device: string;
+        started: boolean;
+        status: import("vrack2-core").IDeviceStatus;
+    }>;
+    /**
      * Захват выхода устройства
     */
     apiServiceDeviceOutputListen(data: {
@@ -186,8 +237,20 @@ export default class Serivce extends Device {
     */
     protected broadcast(channel: string, data: any): void;
     /**
+     * Graceful stop of the running service container and worker self-exit.
+     *
+     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `stop()` / `await stopPromise()` hooks).
+     * 2) Our own container `stopAll()` — ServiceLogger's `stopPromise()` flushes the journal to disk;
+     *    Container.stopDevice awaits each device's stopPromise(), so the write completes before exit.
+     * 3) The worker exits on its own: this thread was spawned for the service, and nobody else will terminate it.
+     *    On the main side the pending request is rejected with WM_WORKER_EXIT by the exit handler — a normal outcome.
+     */
+    apiServiceStop(data: {
+        service: string;
+    }, gData: IGuardMessage): Promise<void>;
+    /**
      * Send termiate errro and terminate service process
-    */
+     */
     protected serviceTerminate(error: Error): void;
     protected exit(): Promise<void>;
     protected getNextCaptureIndex(): number;

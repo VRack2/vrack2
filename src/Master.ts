@@ -6,7 +6,6 @@ import ICommandRegister from "./interfaces/ICommandRegister";
 
 ErrorManager.register(
   'Master',
-  'QHALOLOQBEMN',
   'MASTER_COMMAND_NOT_FOUND',
   'The master did not find a suitable registered command',
   {
@@ -16,14 +15,12 @@ ErrorManager.register(
 
 ErrorManager.register(
   'Master',
-  'URDWFPFHKEAA',
   'MASTER_NO_REQ_DATA',
   'It is necessary to specify the command and the data for it',
 )
 
 ErrorManager.register(
   'Master',
-  'ZEAJYEQFWCUM',
   'MASTER_ACCESS_DENIED',
   'You need to raise the access level to execute this command',
   {
@@ -33,7 +30,6 @@ ErrorManager.register(
 
 ErrorManager.register(
   'Master',
-  'JTTWDXLMPKXD',
   'MASTER_ERROR_VALIDATION',
   'The data does not meet the teams requirements'
 )
@@ -63,7 +59,7 @@ export default class Master extends Device {
   inputs(): { [key: string]: BasicPort; } {
     const ports: { [key: string]: BasicPort; } = {
       'command%d': Port.return().dynamic(this.options.commandPorts).requirement(Rule.object().example({}).description('')),
-      'register%d': Port.standart().dynamic(this.options.registerPorts)
+      'register%d': Port.standard().dynamic(this.options.registerPorts)
     }
     return ports
   }

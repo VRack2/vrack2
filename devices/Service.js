@@ -11,11 +11,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
 const worker_threads_1 = require("worker_threads");
-vrack2_core_1.ErrorManager.register('Service', 'UYWBAXO4GEB1', 'SERVICE_CONTAINER_ERROR', 'An error occurred while loading the container. The reason may be - an incorrect scheme or an error initializing the device. This is a general container loading error, see the nested error inside this');
-vrack2_core_1.ErrorManager.register('Service', 'OFPCDVLAH535', 'SERVICE_CONTAINER_TERMINATE', 'The error occurred because some device called the termination method. See the nested error inside this', {
+vrack2_core_1.ErrorManager.register('Service', 'SERVICE_CONTAINER_ERROR', 'An error occurred while loading the container. The reason may be - an incorrect scheme or an error initializing the device. This is a general container loading error, see the nested error inside this');
+vrack2_core_1.ErrorManager.register('Service', 'SERVICE_CONTAINER_TERMINATE', 'The error occurred because some device called the termination method. See the nested error inside this', {
     device: vrack2_core_1.Rule.string().default('').description('Device ID')
 });
-vrack2_core_1.ErrorManager.register('Service', 'OVD06P5ZF9RV', 'SERVICE_CAPTURE_PORT_TIMEOUT', 'Timeout occurred while waiting for device output capture');
+vrack2_core_1.ErrorManager.register('Service', 'SERVICE_CAPTURE_PORT_TIMEOUT', 'Timeout occurred while waiting for device output capture');
 class Serivce extends vrack2_core_1.Device {
     constructor() {
         super(...arguments);
@@ -32,7 +32,7 @@ class Serivce extends vrack2_core_1.Device {
         /**
          * Service container
         */
-        this.ServiceContainer = new vrack2_core_1.Container('', {}, {});
+        this.ServiceContainer = new vrack2_core_1.Container('', {});
         /**
          * Service info (getting from service manager)
         */
@@ -79,10 +79,11 @@ class Serivce extends vrack2_core_1.Device {
     }
     outputs() {
         return {
-            send: vrack2_core_1.Port.standart().description('Send data to parent process'),
-            broadcast: vrack2_core_1.Port.standart().description('Send broadcast to client'),
+            send: vrack2_core_1.Port.standard().description('Send data to parent process'),
+            broadcast: vrack2_core_1.Port.standard().description('Send broadcast to client'),
             'master.command': vrack2_core_1.Port.return().description('Run master command'),
-            'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
+            'register.command': vrack2_core_1.Port.standard().description('Register command into master'),
+            container: vrack2_core_1.Port.standard().description('Emits the live Container of the started service'),
         };
     }
     inputs() {
@@ -129,6 +130,16 @@ class Serivce extends vrack2_core_1.Device {
             },
         });
         this.ports.output['register.command'].push({
+            command: 'serviceStop',
+            description: 'Internal service command for graceful stop of the container and worker self-exit',
+            level: 0,
+            owner: this.type,
+            handler: this.apiServiceStop.bind(this),
+            rules: {
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+            },
+        });
+        this.ports.output['register.command'].push({
             command: 'serviceShares',
             description: 'Queues all data to be sent',
             level: 3,
@@ -163,6 +174,73 @@ class Serivce extends vrack2_core_1.Device {
                 port: vrack2_core_1.Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
                 data: vrack2_core_1.Rule.any().required().example(1).description('Data for push into port')
             },
+        });
+        this.ports.output['register.command'].push({
+            command: 'serviceDeviceShares',
+            description: 'Get current shares data of a device',
+            level: 1,
+            owner: this.type,
+            handler: this.apiServiceDeviceShares.bind(this),
+            rules: {
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: vrack2_core_1.Rule.object().description('Current shares data of the device')
+        });
+        this.ports.output['register.command'].push({
+            command: 'deviceStop',
+            description: 'Stop a running device in the service container (device stop() + stopPromise()). Reversible and idempotent - a device that is not running is a no-op.',
+            level: 1,
+            owner: this.type,
+            handler: this.apiDeviceStop.bind(this),
+            rules: {
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: vrack2_core_1.Rule.object().fields({
+                device: vrack2_core_1.Rule.string().example('DeviceID').description('Device id'),
+                started: vrack2_core_1.Rule.boolean().example(false).description('Whether the device is running (started) after the call'),
+            }).description('Device state after the stop')
+        });
+        this.ports.output['register.command'].push({
+            command: 'deviceProcess',
+            description: 'Start (process) a device in the service container (device process() + processPromise()). Idempotent - an already started device is a no-op.',
+            level: 1,
+            owner: this.type,
+            handler: this.apiDeviceProcess.bind(this),
+            rules: {
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: vrack2_core_1.Rule.object().fields({
+                device: vrack2_core_1.Rule.string().example('DeviceID').description('Device id'),
+                started: vrack2_core_1.Rule.boolean().example(true).description('Whether the device is running (started) after the call'),
+            }).description('Device state after the process')
+        });
+        this.ports.output['register.command'].push({
+            command: 'deviceStatus',
+            description: 'Read the lifecycle status of a device in the service container (state registered/started/stopped, since timestamp, last alert/error, counters). Read-only - no mutations.',
+            level: 1,
+            owner: this.type,
+            handler: this.apiDeviceStatus.bind(this),
+            rules: {
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: vrack2_core_1.Rule.object().fields({
+                device: vrack2_core_1.Rule.string().example('DeviceID').description('Device id'),
+                started: vrack2_core_1.Rule.boolean().example(true).description('Whether the device is running (started)'),
+                status: vrack2_core_1.Rule.object().fields({
+                    id: vrack2_core_1.Rule.string().example('DeviceID').description('Device id'),
+                    type: vrack2_core_1.Rule.string().example('vendor.Device').description('Device type'),
+                    state: vrack2_core_1.Rule.string().example('started').description("Lifecycle state: 'registered' | 'started' | 'stopped'"),
+                    since: vrack2_core_1.Rule.number().example(1700000000000).description('Date.now() of the last status change (ms)'),
+                    lastAlert: vrack2_core_1.Rule.any().description('Last alert message (device.alert), or null'),
+                    lastError: vrack2_core_1.Rule.any().description('Last error / terminate message, or null'),
+                    alertCount: vrack2_core_1.Rule.number().integer().example(0).description('Number of alerts since registration'),
+                    errorCount: vrack2_core_1.Rule.number().integer().example(0).description('Number of errors (including terminate) since registration'),
+                }).description('Systematized device status record maintained by the container'),
+            }).description('Device lifecycle status')
         });
         this.ports.output['register.command'].push({
             command: 'serviceDeviceOutputListen',
@@ -254,7 +332,7 @@ class Serivce extends vrack2_core_1.Device {
             command: 'serviceParentEvent',
             short: 'Internal Parent Event',
             description: 'Request internal parent event to child service',
-            level: 1,
+            level: 1, // only internal request
             owner: this.type,
             icon: 'calendar-event',
             handler: this.apiServiceParentEvent.bind(this),
@@ -349,6 +427,9 @@ class Serivce extends vrack2_core_1.Device {
             this.ServiceContainer.meta = data.meta;
             this.Serviceinfo = data.info;
             this.ServiceMeta = data.meta;
+            // Пробрасываем контейнер и мета сразу после создания (до run()),
+            // чтобы внешнее устройство (ServiceLogger) успело подписаться на события запуска
+            this.ports.output['container'].push({ container: this.ServiceContainer, meta: data.meta });
             yield this.bindRenderEvent();
             yield this.bindTerminate();
             MainProcessEx.run();
@@ -387,6 +468,65 @@ class Serivce extends vrack2_core_1.Device {
             if (!device.ports.input[data.port])
                 throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_PORT_NF');
             return device.ports.input[data.port].push(data.data);
+        });
+    }
+    /**
+     * Get current shares data of a device
+    */
+    apiServiceDeviceShares(data, gData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.ServiceContainer.devices[data.device])
+                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF');
+            return this.ServiceContainer.devices[data.device].sharesSnapshot();
+        });
+    }
+    /**
+     * Stop a running device in the service container
+     *
+     * Delegates to `Container.stopDevice()`: calls device `stop()`, then
+     * `await stopPromise()`, then marks it stopped. Reversible (can be started
+     * again via `deviceProcess`) and idempotent - a device that is not running
+     * is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     */
+    apiDeviceStop(data, gData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.ServiceContainer.devices[data.device])
+                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF', { device: data.device });
+            yield this.ServiceContainer.stopDevice(data.device);
+            return { device: data.device, started: this.ServiceContainer.isStarted(data.device) };
+        });
+    }
+    /**
+     * Start (process) a device in the service container
+     *
+     * Delegates to `Container.startDevice()`: calls device `process()`, then
+     * `await processPromise()`, then marks it started. Idempotent - an already
+     * started device is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     */
+    apiDeviceProcess(data, gData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.ServiceContainer.devices[data.device])
+                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF', { device: data.device });
+            yield this.ServiceContainer.startDevice(data.device);
+            return { device: data.device, started: this.ServiceContainer.isStarted(data.device) };
+        });
+    }
+    /**
+     * Read the lifecycle status of a device in the service container
+     *
+     * Delegates to `Container.getDeviceStatus()`: the container-maintained
+     * record (state registered/started/stopped, since, last alert/error,
+     * counters). Read-only - no mutations. Throws CTR_DEVICE_NF if the
+     * device id is unknown.
+     */
+    apiDeviceStatus(data, gData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.ServiceContainer.devices[data.device])
+                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF', { device: data.device });
+            const status = this.ServiceContainer.getDeviceStatus(data.device);
+            if (!status)
+                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF', { device: data.device });
+            return { device: data.device, started: status.state === 'started', status };
         });
     }
     /**
@@ -450,6 +590,8 @@ class Serivce extends vrack2_core_1.Device {
     */
     apiServiceDeviceMetric(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
+            if (!this.ServiceContainer.devices[data.device])
+                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF');
             const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.DeviceMetrics);
             let precision = data.precision;
             if (!isNaN(parseInt(precision)))
@@ -463,6 +605,8 @@ class Serivce extends vrack2_core_1.Device {
      */
     apiServiceMetric(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
+            if (!this.Container.devices[data.device])
+                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF');
             const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.DeviceMetrics);
             let precision = data.precision;
             if (!isNaN(parseInt(precision)))
@@ -594,8 +738,44 @@ class Serivce extends vrack2_core_1.Device {
     //     })
     // }
     /**
+     * Graceful stop of the running service container and worker self-exit.
+     *
+     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `stop()` / `await stopPromise()` hooks).
+     * 2) Our own container `stopAll()` — ServiceLogger's `stopPromise()` flushes the journal to disk;
+     *    Container.stopDevice awaits each device's stopPromise(), so the write completes before exit.
+     * 3) The worker exits on its own: this thread was spawned for the service, and nobody else will terminate it.
+     *    On the main side the pending request is rejected with WM_WORKER_EXIT by the exit handler — a normal outcome.
+     */
+    apiServiceStop(data, gData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (!this.ServiceContainer)
+                throw vrack2_core_1.ErrorManager.make('SERVICE_CONTAINER_ERROR');
+            // Останавливаем контейнер пользователя, сохраняя первую ошибку для уведомления main
+            let err = null;
+            try {
+                yield this.ServiceContainer.stopAll();
+            }
+            catch (e) {
+                err = e;
+            }
+            // Останавливаем свой контейнер: ServiceLogger.stopPromise() дописывает журнал в базу.
+            // Ошибки остановки своего контейнера не блокируют выход воркера
+            try {
+                yield this.Container.stopAll();
+            }
+            catch (e) {
+                console.error(`[Service] failed to stop worker container: ${e.message}`);
+            }
+            // Ошибка graceful-остановки: уведомляем main, пока каналы живы, и завершаем поток.
+            // Main сбросил conf.autoReload перед командой, поэтому exit не вызовет автоперезапуск
+            if (err)
+                return this.serviceTerminate(err);
+            process.exit(0);
+        });
+    }
+    /**
      * Send termiate errro and terminate service process
-    */
+     */
     serviceTerminate(error) {
         this.ports.output['send'].push({
             command: 'error',

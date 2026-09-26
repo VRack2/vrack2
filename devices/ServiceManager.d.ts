@@ -1,4 +1,3 @@
-/// <reference types="node" />
 import { Device } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
@@ -16,6 +15,7 @@ export default class ServiceManager extends Device {
     options: {
         autoStart: boolean;
         autoReload: boolean;
+        stopTimeout: number;
         printErrors: boolean;
         ignoreAutoReloadErrors: Array<string>;
         servicesDirs: Array<{
@@ -128,7 +128,7 @@ export default class ServiceManager extends Device {
     */
     apiServiceStop(data: {
         service: string;
-    }): Promise<"success" | IServiceConfig>;
+    }): Promise<IServiceConfig>;
     /***
      * Проверка сервиса
      *

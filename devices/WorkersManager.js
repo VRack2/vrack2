@@ -11,8 +11,8 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
 const path_1 = require("path");
-vrack2_core_1.ErrorManager.register('WorkersManager', 'ASF6TC4U7J6P', 'WM_INTERNAL_ERROR', 'An error occurred within the service being used, causing it to terminate.');
-vrack2_core_1.ErrorManager.register('WorkersManager', 'U4HUK15C0UVO', 'WM_WORKER_EXIT', 'The workers job was terminated, all tasks were deleted.');
+vrack2_core_1.ErrorManager.register('WorkersManager', 'WM_INTERNAL_ERROR', 'An error occurred within the service being used, causing it to terminate.');
+vrack2_core_1.ErrorManager.register('WorkersManager', 'WM_WORKER_EXIT', 'The workers job was terminated, all tasks were deleted.');
 class WorkersManager extends vrack2_core_1.Device {
     constructor() {
         super(...arguments);
@@ -66,7 +66,7 @@ class WorkersManager extends vrack2_core_1.Device {
     outputs() {
         return {
             'master.command': vrack2_core_1.Port.return(),
-            'broadcast': vrack2_core_1.Port.standart()
+            'broadcast': vrack2_core_1.Port.standard()
         };
     }
     checkOptions() {
@@ -215,8 +215,8 @@ class WorkersManager extends vrack2_core_1.Device {
      * @param data Data from Worker service
     */
     internal(id, data) {
-        var _a;
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             const notInternalCommand = {
                 providerType: 'internal',
                 providerId: 0,
