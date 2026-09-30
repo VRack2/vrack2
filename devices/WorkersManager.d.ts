@@ -50,7 +50,7 @@ export default class WorkersManager extends Device {
      * Contains a list of messages that are queued for a particular worker
     */
     private workersQueue;
-    preProcess(): void;
+    onRegister(): void;
     /**
      * Creating a Worker - VRack2 service.
      *

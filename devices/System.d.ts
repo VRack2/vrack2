@@ -11,7 +11,7 @@ export default class System extends Device {
     metrics(): {
         [key: string]: BasicMetric;
     };
-    process(): void;
+    onStart(): void;
     /**
      * Getting the service structure
      * Allows you to retrieve the structure of any service by container ID

@@ -125,12 +125,12 @@ class ServiceManager extends vrack2_core_1.Device {
             stopTimeout: vrack2_core_1.Rule.number().integer().min(100).default(5000).required().description('Graceful service stop timeout (ms): max time to wait for the worker to stop its own container and exit before force-terminating it'),
             printErrors: vrack2_core_1.Rule.boolean().default(true).required().description('Print errros if service is crashed'),
             ignoreAutoReloadErrors: vrack2_core_1.Rule.array().default([
-                'CTR_CONF_EXTENDS_PROBLEM',
-                'CTR_ERROR_INIT_DEVICE',
-                'CTR_DEVICE_PROCESS_EXCEPTION',
-                'CTR_DEVICE_PROCESS_PROMISE_EXCEPTION',
-                'CTR_ERROR_INIT_CONNECTION',
-                'CTR_IGNORE_SERVICE_AUTORELOAD'
+                'SLDR_CONF_EXTENDS_PROBLEM',
+                'SLDR_ERROR_INIT_DEVICE',
+                'CONT_DEVICE_PROCESS_EXCEPTION',
+                'CONT_DEVICE_PROCESS_PROMISE_EXCEPTION',
+                'SLDR_ERROR_INIT_CONNECTION',
+                'CONT_IGNORE_SERVICE_AUTORELOAD'
             ]).required().description('List of errors that the system ignores to restart the service'),
             servicesDirs: vrack2_core_1.Rule.array().default([{ dir: './services', generate: true }]).content(vrack2_core_1.Rule.object().fields({
                 dir: vrack2_core_1.Rule.string().required().description('Service dir path'),
@@ -138,7 +138,7 @@ class ServiceManager extends vrack2_core_1.Device {
             })),
         };
     }
-    process() {
+    onStart() {
         this.ports.output['register.command'].push({
             command: 'service',
             short: 'Get service info',
@@ -248,7 +248,7 @@ class ServiceManager extends vrack2_core_1.Device {
             return: vrack2_core_1.Rule.object().example({}).description('Empty object')
         });
     }
-    processPromise() {
+    onStartAsync() {
         return __awaiter(this, void 0, void 0, function* () {
             yield this.apiServiceListUpdate(); // Обновляем список сервисов 
             this.servicesWatch(); // Начинаем отслеживание сервисных директорий
@@ -425,7 +425,7 @@ class ServiceManager extends vrack2_core_1.Device {
             (_a = killer.unref) === null || _a === void 0 ? void 0 : _a.call(killer);
             try {
                 // Грациозная фаза: воркер сам останавливает свой контейнер устройств
-                // (stop/stopPromise хуки, журнал фиксируется в ServiceLogger.stopPromise) и завершает поток.
+                // (onStop/onStopAsync хуки, журнал фиксируется в ServiceLogger.onStopAsync) и завершает поток.
                 // Штатный исход — WM_WORKER_EXIT: pending-запрос отклоняется обработчиком exit события
                 yield this.inputSubmaster(this.makeServiceRequest('serviceStop', { service: conf.id }));
             }

@@ -56,7 +56,7 @@ class KeyManager extends vrack2_core_1.Device {
             keysPath: vrack2_core_1.Rule.string().required().default('./keys.json').description('Path to keys json file')
         };
     }
-    process() {
+    onStart() {
         /** Load access keys at start */
         this.loadKeys();
         /**
@@ -163,7 +163,7 @@ class KeyManager extends vrack2_core_1.Device {
      * You can only assign a level, name and description.
      * The last flag can be used to specify that VRack2 generates a private key
      *
-     * @see KeyManager.process() Register command apiKeyAdd
+     * @see KeyManager.onStart() Register command apiKeyAdd
     */
     apiKeyAdd(data) {
         return __awaiter(this, void 0, void 0, function* () {

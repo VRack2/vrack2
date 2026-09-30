@@ -95,7 +95,7 @@ export default class Guard extends Device {
         }
     }
 
-    process(): void {
+    onStart(): void {
         this.ports.output['register.command'].push({
             command: 'apiKeyAuth',
             short: 'Api Client authorize',

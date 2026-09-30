@@ -24,11 +24,11 @@ export default class WorkerProvider extends Device {
         reject: (ret: any) => void;
     }>;
     protected qIndex: number;
-    process(): void;
+    onStart(): void;
     /**
      * Receiving and processing a command from the main VRack2 service
      *
-     * @see WorkerProvider.process()
+     * @see WorkerProvider.onStart()
     */
     inputCommand(command: IInternalMessage): Promise<void>;
     /**

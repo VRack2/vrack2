@@ -4,7 +4,7 @@ export default class DeviceInfo extends Device {
     outputs(): {
         [key: string]: BasicPort;
     };
-    process(): void;
+    onStart(): void;
     /**
      * Returns a list of device vendors
     */

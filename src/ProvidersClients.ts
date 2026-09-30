@@ -54,7 +54,7 @@ export default class ProvidersClients extends Device {
         }
     }
 
-    preProcess(): void {
+    onRegister(): void {
         for (let i = 1; i <= this.options.providers; i++)
         {   
             this.providers[i] = {}

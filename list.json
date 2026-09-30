@@ -1,6 +1,5 @@
 {
     "Master": "devices/Master",
-    "Interval": "devices/Interval",
     "Guard": "devices/Guard",
     "WSProvider": "devices/WSProvider",
     "ProvidersClients": "devices/ProvidersClients",

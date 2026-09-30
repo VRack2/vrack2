@@ -42,9 +42,9 @@ export default class WorkerProvider extends Device {
 
     protected queue = new Map<number, { resolve: (ret: any) => void, reject: (ret: any) => void }>()
     protected qIndex = 1
-    process(): void {
+    onStart(): void {
         // Bind loaded method for send signal to service manager
-        this.Container.on('loaded', this.loaded.bind(this))
+        this.Container.on('service.ready', this.loaded.bind(this))
         UniversalWorker.onMessage(this.inputCommand.bind(this))
         // parentPort?.on('message', this.inputCommand.bind(this))
     }
@@ -52,7 +52,7 @@ export default class WorkerProvider extends Device {
     /**
      * Receiving and processing a command from the main VRack2 service  
      * 
-     * @see WorkerProvider.process()
+     * @see WorkerProvider.onStart()
     */
     async inputCommand(command: IInternalMessage) {
         /**

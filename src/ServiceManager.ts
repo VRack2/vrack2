@@ -81,12 +81,12 @@ export default class ServiceManager extends Device {
       stopTimeout: Rule.number().integer().min(100).default(5000).required().description('Graceful service stop timeout (ms): max time to wait for the worker to stop its own container and exit before force-terminating it'),
       printErrors: Rule.boolean().default(true).required().description('Print errros if service is crashed'),
       ignoreAutoReloadErrors: Rule.array().default([
-        'CTR_CONF_EXTENDS_PROBLEM',
-        'CTR_ERROR_INIT_DEVICE',
-        'CTR_DEVICE_PROCESS_EXCEPTION',
-        'CTR_DEVICE_PROCESS_PROMISE_EXCEPTION',
-        'CTR_ERROR_INIT_CONNECTION',
-        'CTR_IGNORE_SERVICE_AUTORELOAD'
+        'SLDR_CONF_EXTENDS_PROBLEM',
+        'SLDR_ERROR_INIT_DEVICE',
+        'CONT_DEVICE_PROCESS_EXCEPTION',
+        'CONT_DEVICE_PROCESS_PROMISE_EXCEPTION',
+        'SLDR_ERROR_INIT_CONNECTION',
+        'CONT_IGNORE_SERVICE_AUTORELOAD'
       ]).required().description('List of errors that the system ignores to restart the service'),
       servicesDirs: Rule.array().default([{ dir: './services', generate: true }]).content(
         Rule.object().fields({
@@ -166,7 +166,7 @@ export default class ServiceManager extends Device {
   }).description('Service object information')
 
 
-  process() {
+  onStart() {
     this.ports.output['register.command'].push({
       command: 'service',
       short: 'Get service info',
@@ -287,7 +287,7 @@ export default class ServiceManager extends Device {
 
   }
 
-  async processPromise(): Promise<void> {
+  async onStartAsync(): Promise<void> {
     await this.apiServiceListUpdate() // Обновляем список сервисов 
     this.servicesWatch()  // Начинаем отслеживание сервисных директорий
     if (this.options.autoStart) this.servicesStart() // Запуск сервисов который должны быть запущены со старта
@@ -450,7 +450,7 @@ export default class ServiceManager extends Device {
     killer.unref?.()
     try {
       // Грациозная фаза: воркер сам останавливает свой контейнер устройств
-      // (stop/stopPromise хуки, журнал фиксируется в ServiceLogger.stopPromise) и завершает поток.
+      // (onStop/onStopAsync хуки, журнал фиксируется в ServiceLogger.onStopAsync) и завершает поток.
       // Штатный исход — WM_WORKER_EXIT: pending-запрос отклоняется обработчиком exit события
       await this.inputSubmaster(this.makeServiceRequest('serviceStop', { service: conf.id }))
     } catch (error) {

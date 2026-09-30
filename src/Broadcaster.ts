@@ -31,7 +31,7 @@ export default class Broadcaster extends Device {
         }
     }
 
-    process(): void {
+    onStart(): void {
         this.ports.output['register.command'].push({
             command: 'channelJoin',
             short: 'Join to broadcast channel',
@@ -97,7 +97,7 @@ export default class Broadcaster extends Device {
     */
     protected clients = new Map<string, { providerId: number, clientId: number }>()
 
-    preProcess(): void {
+    onRegister(): void {
         for (let i = 1; i <= this.options.broadcastInputs; i++){
             this.addInputHandler('clients.broadcast' + i, this.inputClientsBroadcast.bind(this))
         }

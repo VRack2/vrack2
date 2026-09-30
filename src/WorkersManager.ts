@@ -102,7 +102,7 @@ export default class WorkersManager extends Device {
     */
     private workersQueue: Array<Array<number>> = []
 
-    preProcess(): void {
+    onRegister(): void {
         for (let i = 1; i<= this.options.workerInputs; i++){
             this.addInputHandler(`worker${i}.add`, this.inputWorkerAdd.bind(this))
             this.addInputHandler(`worker${i}.stop`, this.inputWorkerStop.bind(this))

@@ -29,7 +29,7 @@ class DeviceInfo extends vrack2_core_1.Device {
             'worker.request': vrack2_core_1.Port.return().description('Отправка запроса через WorkersManager'),
         };
     }
-    process() {
+    onStart() {
         this.ports.output['register.command'].push({
             command: 'vendorList',
             short: 'Get vendors list',

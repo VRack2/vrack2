@@ -80,7 +80,7 @@ export default class Master extends Device {
     }
   }
 
-  preProcess(): void {
+  onRegister(): void {
     for (let i = 1; i <= this.options.registerPorts; i++) {
       this.addInputHandler('register' + i, (data: ICommandRegister) => {
         this.commands[data.command] = data
@@ -95,7 +95,7 @@ export default class Master extends Device {
 
   }
 
-  process(): void {
+  onStart(): void {
     this.commands['commandsList'] = {
       command: 'commandsList',
       short: 'Master command list',

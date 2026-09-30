@@ -40,7 +40,7 @@ export default class WSProvider extends Device {
         receive: number;
         send: number;
     };
-    process(): void;
+    onStart(): void;
     /**
      * Create websocket server
      *

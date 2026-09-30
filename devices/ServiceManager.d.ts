@@ -77,8 +77,8 @@ export default class ServiceManager extends Device {
      * Поля конфигурации сервиса для документации
     */
     protected ServiceRule: import("vrack2-core/lib/validator/types/ObjectType").default;
-    process(): void;
-    processPromise(): Promise<void>;
+    onStart(): void;
+    onStartAsync(): Promise<void>;
     /**
      * Return a general service info
      *

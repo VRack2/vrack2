@@ -37,16 +37,16 @@ class WorkerProvider extends vrack2_core_1.Device {
     checkOptions() {
         return {};
     }
-    process() {
+    onStart() {
         // Bind loaded method for send signal to service manager
-        this.Container.on('loaded', this.loaded.bind(this));
+        this.Container.on('service.ready', this.loaded.bind(this));
         vrack2_core_1.UniversalWorker.onMessage(this.inputCommand.bind(this));
         // parentPort?.on('message', this.inputCommand.bind(this))
     }
     /**
      * Receiving and processing a command from the main VRack2 service
      *
-     * @see WorkerProvider.process()
+     * @see WorkerProvider.onStart()
     */
     inputCommand(command) {
         return __awaiter(this, void 0, void 0, function* () {

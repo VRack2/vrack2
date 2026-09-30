@@ -20,7 +20,7 @@ class DeviceWorker extends vrack2_core_1.Device {
             'register.command': vrack2_core_1.Port.standard().description('Register command into master'),
         };
     }
-    process() {
+    onStart() {
         this.ports.output['register.command'].push({
             command: 'vendorList',
             short: 'Get vendors list',

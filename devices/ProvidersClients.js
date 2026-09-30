@@ -48,7 +48,7 @@ class ProvidersClients extends vrack2_core_1.Device {
             providers: vrack2_core_1.Rule.number().required().integer().min(0).max(10)
         };
     }
-    preProcess() {
+    onRegister() {
         for (let i = 1; i <= this.options.providers; i++) {
             this.providers[i] = {};
             this.addInputHandler('client' + i + '.Command', (data) => this.inputClientCommand(data, i));

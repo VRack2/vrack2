@@ -31,10 +31,10 @@
 
 Что бы получать все события, которые были указанны в метаданных - необходимо подписаться на событие `Service.parent.event` внутри вашего сервиса.
 
-Лучше это делать на этапе `process()`
+Лучше это делать на этапе `onStart()`
 
 ```js
-    process(){
+    onStart(){
         this.Container.addListener('Service.parent.event', (data)=>{
             console.log(data)
         })

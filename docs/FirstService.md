@@ -200,7 +200,7 @@ class Timer extends Device {
     timer = null
 
     // Метод будет запущен при старте устройства
-    process() {
+    onStart() {
         // Если runAtStart = true - значит запускаем таймер сразу
         if (this.options.runAtStart) this.inputStart()
         this.render(); // Отправляем shares данные для онлайн наблюдения

@@ -59,7 +59,7 @@ class Guard extends vrack2_core_1.Device {
         // providers: Rule.number().required().integer().min(0).max(10)
         };
     }
-    process() {
+    onStart() {
         this.ports.output['register.command'].push({
             command: 'apiKeyAuth',
             short: 'Api Client authorize',

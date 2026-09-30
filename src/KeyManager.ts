@@ -57,7 +57,7 @@ export default class KeyManager extends Device {
     /** List of access keys */
     protected keys : Array<IApiKey> = []
 
-    process(): void {
+    onStart(): void {
         /** Load access keys at start */
         this.loadKeys()
 
@@ -169,7 +169,7 @@ export default class KeyManager extends Device {
      * You can only assign a level, name and description.
      * The last flag can be used to specify that VRack2 generates a private key
      * 
-     * @see KeyManager.process() Register command apiKeyAdd
+     * @see KeyManager.onStart() Register command apiKeyAdd
     */
     async apiKeyAdd(data: { level: number, name:string, description:string, cipher: boolean }){
         const nKey: IApiKey = {

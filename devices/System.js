@@ -35,7 +35,7 @@ class System extends vrack2_core_1.Device {
             'memory.arraybuffers': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory arrayBuffers'),
         };
     }
-    process() {
+    onStart() {
         this.ports.output['register.command'].push({
             command: 'structureGet',
             short: 'Get structure',

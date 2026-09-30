@@ -68,7 +68,7 @@ class WSProvider extends vrack2_core_1.Device {
             'byte.receive': vrack2_core_1.Metric.inS().retentions('1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('Count bytes receive from client in min')
         };
     }
-    process() {
+    onStart() {
         this.createServer();
         this.pingInterval();
         setInterval(() => {

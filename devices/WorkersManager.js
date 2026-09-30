@@ -75,7 +75,7 @@ class WorkersManager extends vrack2_core_1.Device {
             workderIndexPath: vrack2_core_1.Rule.string().default((0, path_1.join)(process.cwd(), 'run', 'index.js')).description('Path to index.js file of vrack2-service')
         };
     }
-    preProcess() {
+    onRegister() {
         for (let i = 1; i <= this.options.workerInputs; i++) {
             this.addInputHandler(`worker${i}.add`, this.inputWorkerAdd.bind(this));
             this.addInputHandler(`worker${i}.stop`, this.inputWorkerStop.bind(this));

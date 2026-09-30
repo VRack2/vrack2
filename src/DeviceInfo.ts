@@ -20,8 +20,8 @@ export default class DeviceInfo extends Device {
     }
   }
 
-  process() {
-    
+  onStart() {
+
     this.ports.output['register.command'].push({
       command: 'vendorList',
       short: 'Get vendors list',

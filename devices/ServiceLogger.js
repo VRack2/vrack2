@@ -136,7 +136,7 @@ class ServiceLogger extends vrack2_core_1.Device {
             'valueMax': vrack2_core_1.Rule.number().integer().min(32).default(500).description('Max stored value length'),
         };
     }
-    process() {
+    onStart() {
         this.ports.output['register.command'].push({
             command: 'serviceLog',
             short: 'Service journal tail',
@@ -215,11 +215,11 @@ class ServiceLogger extends vrack2_core_1.Device {
         this.bindLogCapture();
     }
     /**
-     * Stop-хук: Container.stopDevice()/stopAll() вызывает stop(), а затем AWAIT этого метода.
+     * Stop-хук: Container.stopDevice()/stopAll() вызывает onStop(), а затем AWAIT этого метода.
      * Дописывает накопленную запись и закрывает базу журнала (синхронные операции),
      * поэтому данные гарантированно на диске до выхода воркера из памяти.
      */
-    stopPromise() {
+    onStopAsync() {
         return __awaiter(this, void 0, void 0, function* () {
             this.closeJournal();
         });

@@ -21,11 +21,11 @@ class InterService extends vrack2_core_1.Device {
             inputs: vrack2_core_1.Rule.number().integer().min(0).default(1).required().description('Count input command ports')
         };
     }
-    preProcess() {
+    onRegister() {
         for (let i = 1; i <= this.options.inputs; i++)
             this.addInputHandler('command' + i, this.inputCommand.bind(this));
     }
-    process() {
+    onStart() {
         var _a;
         if (!this.Container.parent)
             throw vrack2_core_1.ErrorManager.make('INTER_SERVICE_PROCESS_ERROR');

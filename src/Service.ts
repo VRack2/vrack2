@@ -46,7 +46,6 @@ export default class Serivce extends Device {
     checkOptions(): { [key: string]: BasicType; } {
         return {
             'mainProcessPath': Rule.string().required().default('vrack2-core.MainProcess').description('Main process class path'),
-            'renderDelay': Rule.number().integer().min(10).max(3000).default(200).description('Minimal render delay for render shares'),
             'uncaughtTerminate': Rule.boolean().default(true).description('Terminate service if call uncaught exception'),
         }
     }
@@ -101,24 +100,9 @@ export default class Serivce extends Device {
     }
 
 
-    /***
-     * Render pull for service shares data
-    */
-    renderPull = new Set<string>()
-
-    /**
-     * Render data for send to service manager
-    */
-    renderData = new Map<string, any>()
-
-    /**
-     * Render timer 
-    */
-    renderTimer: boolean | NodeJS.Timeout = false;
-
     /**
      * Индекс для захвата порта устройства
-    */
+     */
     captureIndex = 1000
 
     /**
@@ -126,10 +110,7 @@ export default class Serivce extends Device {
     */
     capturePull = new Map()
 
-    process(): void {
-        // // Bind loaded method for send signal to service manager
-        // this.Container.on('loaded', this.loaded.bind(this))
-
+    onStart(): void {
         // Register api commands
         this.ports.output['register.command'].push({
             command: 'serviceStart',
@@ -167,7 +148,7 @@ export default class Serivce extends Device {
 
         this.ports.output['register.command'].push({
             command: 'serviceShares',
-            description: 'Queues all data to be sent',
+            description: 'Sends the current shares of all service devices to subscribers (direct push)',
             level: 3,
             owner: this.type,
             handler: this.apiServiceShares.bind(this),
@@ -219,7 +200,7 @@ export default class Serivce extends Device {
 
         this.ports.output['register.command'].push({
             command: 'deviceStop',
-            description: 'Stop a running device in the service container (device stop() + stopPromise()). Reversible and idempotent - a device that is not running is a no-op.',
+            description: 'Stop a running device in the service container (device onStop() + onStopAsync()). Reversible and idempotent - a device that is not running is a no-op.',
             level: 1,
             owner: this.type,
             handler: this.apiDeviceStop.bind(this),
@@ -235,7 +216,7 @@ export default class Serivce extends Device {
 
         this.ports.output['register.command'].push({
             command: 'deviceProcess',
-            description: 'Start (process) a device in the service container (device process() + processPromise()). Idempotent - an already started device is a no-op.',
+            description: 'Start (process) a device in the service container (device onStart() + onStartAsync()). Idempotent - an already started device is a no-op.',
             level: 1,
             owner: this.type,
             handler: this.apiDeviceProcess.bind(this),
@@ -478,14 +459,14 @@ export default class Serivce extends Device {
     }
 
     /**
-     * Queues all shares data to be sent
-     * 
+     * Sends the current shares of all service devices to subscribers
+      * 
      * @param {Object} data - not used receive params
-    */
+     */
     async apiServiceShares(data: { service: string }, gData: IGuardMessage) {
-        this.renderData.forEach((value, key) => { this.renderPull.add(key) })
-        if (this.renderTimer && typeof this.renderTimer !== 'boolean') clearTimeout(this.renderTimer)
-        this.serviceRender()
+        for (const deviceId in this.ServiceContainer.devices) {
+            this.broadcast(this.makeBroadcastChannel(deviceId, 'render'), this.ServiceContainer.devices[deviceId].shares)
+        }
     }
 
     /**
@@ -499,9 +480,9 @@ export default class Serivce extends Device {
      * Calling a device port push
     */
     async apiServiceDevicePush(data: IDevicePushRequest, gData: IGuardMessage) {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF')
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF')
         const device = this.ServiceContainer.devices[data.device]
-        if (!device.ports.input[data.port]) throw ErrorManager.make('CTR_DEVICE_PORT_NF')    
+        if (!device.ports.input[data.port]) throw ErrorManager.make('CONT_DEVICE_PORT_NF')    
         return device.ports.input[data.port].push(data.data)
     }
 
@@ -509,20 +490,20 @@ export default class Serivce extends Device {
      * Get current shares data of a device
     */
     async apiServiceDeviceShares(data: { service: string, device: string }, gData: IGuardMessage) {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF')
-        return this.ServiceContainer.devices[data.device].sharesSnapshot()
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF')
+        return this.ServiceContainer.devices[data.device].shares
     }
 
     /**
      * Stop a running device in the service container
      *
-     * Delegates to `Container.stopDevice()`: calls device `stop()`, then
-     * `await stopPromise()`, then marks it stopped. Reversible (can be started
+     * Delegates to `Container.stopDevice()`: calls device `onStop()`, then
+     * `await onStopAsync()`, then marks it stopped. Reversible (can be started
      * again via `deviceProcess`) and idempotent - a device that is not running
-     * is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     * is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
      */
     async apiDeviceStop(data: { service: string, device: string }, gData: IGuardMessage) {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF', { device: data.device })
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF', { device: data.device })
         await this.ServiceContainer.stopDevice(data.device)
         return { device: data.device, started: this.ServiceContainer.isStarted(data.device) }
     }
@@ -530,12 +511,12 @@ export default class Serivce extends Device {
     /**
      * Start (process) a device in the service container
      *
-     * Delegates to `Container.startDevice()`: calls device `process()`, then
-     * `await processPromise()`, then marks it started. Idempotent - an already
-     * started device is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     * Delegates to `Container.startDevice()`: calls device `onStart()`, then
+     * `await onStartAsync()`, then marks it started. Idempotent - an already
+     * started device is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
      */
     async apiDeviceProcess(data: { service: string, device: string }, gData: IGuardMessage) {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF', { device: data.device })
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF', { device: data.device })
         await this.ServiceContainer.startDevice(data.device)
         return { device: data.device, started: this.ServiceContainer.isStarted(data.device) }
     }
@@ -545,13 +526,13 @@ export default class Serivce extends Device {
      *
      * Delegates to `Container.getDeviceStatus()`: the container-maintained
      * record (state registered/started/stopped, since, last alert/error,
-     * counters). Read-only - no mutations. Throws CTR_DEVICE_NF if the
+     * counters). Read-only - no mutations. Throws CONT_DEVICE_NF if the
      * device id is unknown.
      */
     async apiDeviceStatus(data: { service: string, device: string }, gData: IGuardMessage) {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF', { device: data.device })
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF', { device: data.device })
         const status = this.ServiceContainer.getDeviceStatus(data.device)
-        if (!status) throw ErrorManager.make('CTR_DEVICE_NF', { device: data.device })
+        if (!status) throw ErrorManager.make('CONT_DEVICE_NF', { device: data.device })
         return { device: data.device, started: status.state === 'started', status }
     }
 
@@ -562,13 +543,13 @@ export default class Serivce extends Device {
         return new Promise((resolve, reject) => {
             // Проверяем наличие устройства
             if (!this.ServiceContainer.devices[data.device]) { 
-                reject( ErrorManager.make('CTR_DEVICE_NF'))
+                reject( ErrorManager.make('CONT_DEVICE_NF'))
                 return
             }
             const device = this.ServiceContainer.devices[data.device]
             // Проверяем наличие порта
             if (!device.ports.output[data.port]) { 
-                reject(ErrorManager.make('CTR_DEVICE_PORT_NF'))
+                reject(ErrorManager.make('CONT_DEVICE_PORT_NF'))
                 return
             }
             // Создаем новый индекс
@@ -617,7 +598,7 @@ export default class Serivce extends Device {
      * Getting device metric
     */
     async apiServiceDeviceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF')
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF')
         const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', DeviceMetrics) as DeviceMetrics
         let precision: string | number = data.precision
         if (!isNaN(parseInt(precision))) precision = parseInt(precision)
@@ -631,7 +612,7 @@ export default class Serivce extends Device {
      * Obtaining system metrics. Those that were initialized at the VRack2 level
      */
     async apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-        if (!this.Container.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF')
+        if (!this.Container.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF')
         const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', DeviceMetrics) as DeviceMetrics
         let precision: string | number = data.precision
         if (!isNaN(parseInt(precision))) precision = parseInt(precision)
@@ -682,35 +663,13 @@ export default class Serivce extends Device {
 
     /**
      * Bind render device event
-     * 
-     * Update render pull & render data
-     * 
-     * @see renderPull
-     * @see renderData
-    */
+      * 
+     * Broadcast the device render payload directly to subscribers
+     */
     protected async bindRenderEvent() {
         this.ServiceContainer.on('device.render', (data: { device: string; data: string; trace: any; }) => {
-            this.renderPull.add(data.device)
-            this.renderData.set(data.device, data.trace)
-            if (!this.renderTimer) this.serviceRender()
+            this.broadcast(this.makeBroadcastChannel(data.device, 'render'), data.trace)
         })
-    }
-
-    /**
-     * Send broadcast for device render event
-     * 
-     * @see bindRenderEvent
-    */
-    protected serviceRender() {
-        if (!this.renderPull.size) return
-        this.renderPull.forEach((deviceId) => {
-            this.broadcast(this.makeBroadcastChannel(deviceId, 'render'), this.renderData.get(deviceId))
-        })
-        this.renderPull.clear()
-        this.renderTimer = setTimeout(() => {
-            this.renderTimer = false
-            this.serviceRender()
-        }, this.options.renderDelay)
     }
 
 
@@ -767,9 +726,9 @@ export default class Serivce extends Device {
     /**
      * Graceful stop of the running service container and worker self-exit.
      *
-     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `stop()` / `await stopPromise()` hooks).
-     * 2) Our own container `stopAll()` — ServiceLogger's `stopPromise()` flushes the journal to disk;
-     *    Container.stopDevice awaits each device's stopPromise(), so the write completes before exit.
+     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `onStop()` / `await onStopAsync()` hooks).
+     * 2) Our own container `stopAll()` — ServiceLogger's `onStopAsync()` flushes the journal to disk;
+     *    Container.stopDevice awaits each device's onStopAsync(), so the write completes before exit.
      * 3) The worker exits on its own: this thread was spawned for the service, and nobody else will terminate it.
      *    On the main side the pending request is rejected with WM_WORKER_EXIT by the exit handler — a normal outcome.
      */
@@ -784,7 +743,7 @@ export default class Serivce extends Device {
             err = e as Error
         }
 
-        // Останавливаем свой контейнер: ServiceLogger.stopPromise() дописывает журнал в базу.
+        // Останавливаем свой контейнер: ServiceLogger.onStopAsync() дописывает журнал в базу.
         // Ошибки остановки своего контейнера не блокируют выход воркера
         try {
             await this.Container.stopAll()

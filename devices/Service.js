@@ -51,21 +51,9 @@ class Serivce extends vrack2_core_1.Device {
             name: '', group: '', description: '',
             system: false, autoStart: false, autoReload: false, isolated: false
         };
-        /***
-         * Render pull for service shares data
-        */
-        this.renderPull = new Set();
-        /**
-         * Render data for send to service manager
-        */
-        this.renderData = new Map();
-        /**
-         * Render timer
-        */
-        this.renderTimer = false;
         /**
          * Индекс для захвата порта устройства
-        */
+         */
         this.captureIndex = 1000;
         /**
          * Пулл для хранения таймаутов захвата порта устройства
@@ -92,7 +80,6 @@ class Serivce extends vrack2_core_1.Device {
     checkOptions() {
         return {
             'mainProcessPath': vrack2_core_1.Rule.string().required().default('vrack2-core.MainProcess').description('Main process class path'),
-            'renderDelay': vrack2_core_1.Rule.number().integer().min(10).max(3000).default(200).description('Minimal render delay for render shares'),
             'uncaughtTerminate': vrack2_core_1.Rule.boolean().default(true).description('Terminate service if call uncaught exception'),
         };
     }
@@ -105,9 +92,7 @@ class Serivce extends vrack2_core_1.Device {
             'memory.arraybuffers': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory arrayBuffers'),
         };
     }
-    process() {
-        // // Bind loaded method for send signal to service manager
-        // this.Container.on('loaded', this.loaded.bind(this))
+    onStart() {
         // Register api commands
         this.ports.output['register.command'].push({
             command: 'serviceStart',
@@ -141,7 +126,7 @@ class Serivce extends vrack2_core_1.Device {
         });
         this.ports.output['register.command'].push({
             command: 'serviceShares',
-            description: 'Queues all data to be sent',
+            description: 'Sends the current shares of all service devices to subscribers (direct push)',
             level: 3,
             owner: this.type,
             handler: this.apiServiceShares.bind(this),
@@ -189,7 +174,7 @@ class Serivce extends vrack2_core_1.Device {
         });
         this.ports.output['register.command'].push({
             command: 'deviceStop',
-            description: 'Stop a running device in the service container (device stop() + stopPromise()). Reversible and idempotent - a device that is not running is a no-op.',
+            description: 'Stop a running device in the service container (device onStop() + onStopAsync()). Reversible and idempotent - a device that is not running is a no-op.',
             level: 1,
             owner: this.type,
             handler: this.apiDeviceStop.bind(this),
@@ -204,7 +189,7 @@ class Serivce extends vrack2_core_1.Device {
         });
         this.ports.output['register.command'].push({
             command: 'deviceProcess',
-            description: 'Start (process) a device in the service container (device process() + processPromise()). Idempotent - an already started device is a no-op.',
+            description: 'Start (process) a device in the service container (device onStart() + onStartAsync()). Idempotent - an already started device is a no-op.',
             level: 1,
             owner: this.type,
             handler: this.apiDeviceProcess.bind(this),
@@ -437,16 +422,15 @@ class Serivce extends vrack2_core_1.Device {
         });
     }
     /**
-     * Queues all shares data to be sent
-     *
+     * Sends the current shares of all service devices to subscribers
+      *
      * @param {Object} data - not used receive params
-    */
+     */
     apiServiceShares(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            this.renderData.forEach((value, key) => { this.renderPull.add(key); });
-            if (this.renderTimer && typeof this.renderTimer !== 'boolean')
-                clearTimeout(this.renderTimer);
-            this.serviceRender();
+            for (const deviceId in this.ServiceContainer.devices) {
+                this.broadcast(this.makeBroadcastChannel(deviceId, 'render'), this.ServiceContainer.devices[deviceId].shares);
+            }
         });
     }
     /**
@@ -463,10 +447,10 @@ class Serivce extends vrack2_core_1.Device {
     apiServiceDevicePush(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.ServiceContainer.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF');
+                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF');
             const device = this.ServiceContainer.devices[data.device];
             if (!device.ports.input[data.port])
-                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_PORT_NF');
+                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_PORT_NF');
             return device.ports.input[data.port].push(data.data);
         });
     }
@@ -476,22 +460,22 @@ class Serivce extends vrack2_core_1.Device {
     apiServiceDeviceShares(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.ServiceContainer.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF');
-            return this.ServiceContainer.devices[data.device].sharesSnapshot();
+                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF');
+            return this.ServiceContainer.devices[data.device].shares;
         });
     }
     /**
      * Stop a running device in the service container
      *
-     * Delegates to `Container.stopDevice()`: calls device `stop()`, then
-     * `await stopPromise()`, then marks it stopped. Reversible (can be started
+     * Delegates to `Container.stopDevice()`: calls device `onStop()`, then
+     * `await onStopAsync()`, then marks it stopped. Reversible (can be started
      * again via `deviceProcess`) and idempotent - a device that is not running
-     * is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     * is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
      */
     apiDeviceStop(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.ServiceContainer.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF', { device: data.device });
+                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF', { device: data.device });
             yield this.ServiceContainer.stopDevice(data.device);
             return { device: data.device, started: this.ServiceContainer.isStarted(data.device) };
         });
@@ -499,14 +483,14 @@ class Serivce extends vrack2_core_1.Device {
     /**
      * Start (process) a device in the service container
      *
-     * Delegates to `Container.startDevice()`: calls device `process()`, then
-     * `await processPromise()`, then marks it started. Idempotent - an already
-     * started device is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     * Delegates to `Container.startDevice()`: calls device `onStart()`, then
+     * `await onStartAsync()`, then marks it started. Idempotent - an already
+     * started device is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
      */
     apiDeviceProcess(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.ServiceContainer.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF', { device: data.device });
+                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF', { device: data.device });
             yield this.ServiceContainer.startDevice(data.device);
             return { device: data.device, started: this.ServiceContainer.isStarted(data.device) };
         });
@@ -516,16 +500,16 @@ class Serivce extends vrack2_core_1.Device {
      *
      * Delegates to `Container.getDeviceStatus()`: the container-maintained
      * record (state registered/started/stopped, since, last alert/error,
-     * counters). Read-only - no mutations. Throws CTR_DEVICE_NF if the
+     * counters). Read-only - no mutations. Throws CONT_DEVICE_NF if the
      * device id is unknown.
      */
     apiDeviceStatus(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.ServiceContainer.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF', { device: data.device });
+                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF', { device: data.device });
             const status = this.ServiceContainer.getDeviceStatus(data.device);
             if (!status)
-                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF', { device: data.device });
+                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF', { device: data.device });
             return { device: data.device, started: status.state === 'started', status };
         });
     }
@@ -536,13 +520,13 @@ class Serivce extends vrack2_core_1.Device {
         return new Promise((resolve, reject) => {
             // Проверяем наличие устройства
             if (!this.ServiceContainer.devices[data.device]) {
-                reject(vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF'));
+                reject(vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF'));
                 return;
             }
             const device = this.ServiceContainer.devices[data.device];
             // Проверяем наличие порта
             if (!device.ports.output[data.port]) {
-                reject(vrack2_core_1.ErrorManager.make('CTR_DEVICE_PORT_NF'));
+                reject(vrack2_core_1.ErrorManager.make('CONT_DEVICE_PORT_NF'));
                 return;
             }
             // Создаем новый индекс
@@ -591,7 +575,7 @@ class Serivce extends vrack2_core_1.Device {
     apiServiceDeviceMetric(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.ServiceContainer.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF');
+                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF');
             const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.DeviceMetrics);
             let precision = data.precision;
             if (!isNaN(parseInt(precision)))
@@ -606,7 +590,7 @@ class Serivce extends vrack2_core_1.Device {
     apiServiceMetric(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.Container.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CTR_DEVICE_NF');
+                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF');
             const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.DeviceMetrics);
             let precision = data.precision;
             if (!isNaN(parseInt(precision)))
@@ -657,38 +641,15 @@ class Serivce extends vrack2_core_1.Device {
     }
     /**
      * Bind render device event
-     *
-     * Update render pull & render data
-     *
-     * @see renderPull
-     * @see renderData
-    */
+      *
+     * Broadcast the device render payload directly to subscribers
+     */
     bindRenderEvent() {
         return __awaiter(this, void 0, void 0, function* () {
             this.ServiceContainer.on('device.render', (data) => {
-                this.renderPull.add(data.device);
-                this.renderData.set(data.device, data.trace);
-                if (!this.renderTimer)
-                    this.serviceRender();
+                this.broadcast(this.makeBroadcastChannel(data.device, 'render'), data.trace);
             });
         });
-    }
-    /**
-     * Send broadcast for device render event
-     *
-     * @see bindRenderEvent
-    */
-    serviceRender() {
-        if (!this.renderPull.size)
-            return;
-        this.renderPull.forEach((deviceId) => {
-            this.broadcast(this.makeBroadcastChannel(deviceId, 'render'), this.renderData.get(deviceId));
-        });
-        this.renderPull.clear();
-        this.renderTimer = setTimeout(() => {
-            this.renderTimer = false;
-            this.serviceRender();
-        }, this.options.renderDelay);
     }
     /**
      * Convert object to string using util.inspect
@@ -740,9 +701,9 @@ class Serivce extends vrack2_core_1.Device {
     /**
      * Graceful stop of the running service container and worker self-exit.
      *
-     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `stop()` / `await stopPromise()` hooks).
-     * 2) Our own container `stopAll()` — ServiceLogger's `stopPromise()` flushes the journal to disk;
-     *    Container.stopDevice awaits each device's stopPromise(), so the write completes before exit.
+     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `onStop()` / `await onStopAsync()` hooks).
+     * 2) Our own container `stopAll()` — ServiceLogger's `onStopAsync()` flushes the journal to disk;
+     *    Container.stopDevice awaits each device's onStopAsync(), so the write completes before exit.
      * 3) The worker exits on its own: this thread was spawned for the service, and nobody else will terminate it.
      *    On the main side the pending request is rejected with WM_WORKER_EXIT by the exit handler — a normal outcome.
      */
@@ -758,7 +719,7 @@ class Serivce extends vrack2_core_1.Device {
             catch (e) {
                 err = e;
             }
-            // Останавливаем свой контейнер: ServiceLogger.stopPromise() дописывает журнал в базу.
+            // Останавливаем свой контейнер: ServiceLogger.onStopAsync() дописывает журнал в базу.
             // Ошибки остановки своего контейнера не блокируют выход воркера
             try {
                 yield this.Container.stopAll();

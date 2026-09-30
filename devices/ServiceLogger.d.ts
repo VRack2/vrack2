@@ -68,7 +68,7 @@ export default class ServiceLogger extends Device {
     eventsChannels: {
         [key: string]: string;
     };
-    process(): void;
+    onStart(): void;
     /**
      * Вход: контейнер запущенного сервиса + мета
      * Подписки выполняются до run() контейнера, поэтому журнал
@@ -81,11 +81,11 @@ export default class ServiceLogger extends Device {
         meta: IServiceMeta;
     }): void;
     /**
-     * Stop-хук: Container.stopDevice()/stopAll() вызывает stop(), а затем AWAIT этого метода.
+     * Stop-хук: Container.stopDevice()/stopAll() вызывает onStop(), а затем AWAIT этого метода.
      * Дописывает накопленную запись и закрывает базу журнала (синхронные операции),
      * поэтому данные гарантированно на диске до выхода воркера из памяти.
      */
-    stopPromise(): Promise<void>;
+    onStopAsync(): Promise<void>;
     /**
      * Запись накопленной (еще не зафиксированной) записи в базу и закрытие журнала
      */

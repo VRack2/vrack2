@@ -34,7 +34,7 @@ export default class Guard extends Device {
     checkOptions(): {
         [key: string]: BasicType;
     };
-    process(): void;
+    onStart(): void;
     /**
      * Command apiKeyAuth
      *

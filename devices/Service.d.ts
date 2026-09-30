@@ -40,27 +40,15 @@ export default class Serivce extends Device {
      * Service meta (getting from service manager)
     */
     ServiceMeta: IServiceMeta;
-    /***
-     * Render pull for service shares data
-    */
-    renderPull: Set<string>;
-    /**
-     * Render data for send to service manager
-    */
-    renderData: Map<string, any>;
-    /**
-     * Render timer
-    */
-    renderTimer: boolean | NodeJS.Timeout;
     /**
      * Индекс для захвата порта устройства
-    */
+     */
     captureIndex: number;
     /**
      * Пулл для хранения таймаутов захвата порта устройства
     */
     capturePull: Map<any, any>;
-    process(): void;
+    onStart(): void;
     /**                 API SERVICE METHODS                 **/
     /**
      * Internal method for starting service
@@ -96,10 +84,10 @@ export default class Serivce extends Device {
         meta: IServiceMeta;
     }, gData: IGuardMessage): Promise<void>;
     /**
-     * Queues all shares data to be sent
-     *
+     * Sends the current shares of all service devices to subscribers
+      *
      * @param {Object} data - not used receive params
-    */
+     */
     apiServiceShares(data: {
         service: string;
     }, gData: IGuardMessage): Promise<void>;
@@ -121,10 +109,10 @@ export default class Serivce extends Device {
     /**
      * Stop a running device in the service container
      *
-     * Delegates to `Container.stopDevice()`: calls device `stop()`, then
-     * `await stopPromise()`, then marks it stopped. Reversible (can be started
+     * Delegates to `Container.stopDevice()`: calls device `onStop()`, then
+     * `await onStopAsync()`, then marks it stopped. Reversible (can be started
      * again via `deviceProcess`) and idempotent - a device that is not running
-     * is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     * is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
      */
     apiDeviceStop(data: {
         service: string;
@@ -136,9 +124,9 @@ export default class Serivce extends Device {
     /**
      * Start (process) a device in the service container
      *
-     * Delegates to `Container.startDevice()`: calls device `process()`, then
-     * `await processPromise()`, then marks it started. Idempotent - an already
-     * started device is a no-op. Throws CTR_DEVICE_NF if the device id is unknown.
+     * Delegates to `Container.startDevice()`: calls device `onStart()`, then
+     * `await onStartAsync()`, then marks it started. Idempotent - an already
+     * started device is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
      */
     apiDeviceProcess(data: {
         service: string;
@@ -152,7 +140,7 @@ export default class Serivce extends Device {
      *
      * Delegates to `Container.getDeviceStatus()`: the container-maintained
      * record (state registered/started/stopped, since, last alert/error,
-     * counters). Read-only - no mutations. Throws CTR_DEVICE_NF if the
+     * counters). Read-only - no mutations. Throws CONT_DEVICE_NF if the
      * device id is unknown.
      */
     apiDeviceStatus(data: {
@@ -208,19 +196,10 @@ export default class Serivce extends Device {
     protected bindContainerDeviceEvents(): Promise<void>;
     /**
      * Bind render device event
-     *
-     * Update render pull & render data
-     *
-     * @see renderPull
-     * @see renderData
-    */
+      *
+     * Broadcast the device render payload directly to subscribers
+     */
     protected bindRenderEvent(): Promise<void>;
-    /**
-     * Send broadcast for device render event
-     *
-     * @see bindRenderEvent
-    */
-    protected serviceRender(): void;
     /**
      * Convert object to string using util.inspect
     */
@@ -239,9 +218,9 @@ export default class Serivce extends Device {
     /**
      * Graceful stop of the running service container and worker self-exit.
      *
-     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `stop()` / `await stopPromise()` hooks).
-     * 2) Our own container `stopAll()` — ServiceLogger's `stopPromise()` flushes the journal to disk;
-     *    Container.stopDevice awaits each device's stopPromise(), so the write completes before exit.
+     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `onStop()` / `await onStopAsync()` hooks).
+     * 2) Our own container `stopAll()` — ServiceLogger's `onStopAsync()` flushes the journal to disk;
+     *    Container.stopDevice awaits each device's onStopAsync(), so the write completes before exit.
      * 3) The worker exits on its own: this thread was spawned for the service, and nobody else will terminate it.
      *    On the main side the pending request is rejected with WM_WORKER_EXIT by the exit handler — a normal outcome.
      */

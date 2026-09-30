@@ -65,7 +65,7 @@ export default class WSProvider extends Device {
     send: 0,
   }
 
-  process() {
+  onStart() {
     this.createServer()
     this.pingInterval()
 

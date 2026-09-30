@@ -30,7 +30,7 @@ export default class System extends Device {
     }
   }
 
-  process(): void {
+  onStart(): void {
     this.ports.output['register.command'].push({
       command: 'structureGet',
       short: 'Get structure',

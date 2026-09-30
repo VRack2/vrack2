@@ -49,7 +49,7 @@ class Master extends vrack2_core_1.Device {
                 .description('Count of ports for registers command')
         };
     }
-    preProcess() {
+    onRegister() {
         for (let i = 1; i <= this.options.registerPorts; i++) {
             this.addInputHandler('register' + i, (data) => {
                 this.commands[data.command] = data;
@@ -61,7 +61,7 @@ class Master extends vrack2_core_1.Device {
             });
         }
     }
-    process() {
+    onStart() {
         this.commands['commandsList'] = {
             command: 'commandsList',
             short: 'Master command list',

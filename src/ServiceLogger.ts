@@ -125,7 +125,7 @@ export default class ServiceLogger extends Device {
         'device.event':  'event'
     }
 
-    process(): void {
+    onStart(): void {
         this.ports.output['register.command'].push({
             command: 'serviceLog',
             short: 'Service journal tail',
@@ -208,11 +208,11 @@ export default class ServiceLogger extends Device {
     }
 
     /**
-     * Stop-хук: Container.stopDevice()/stopAll() вызывает stop(), а затем AWAIT этого метода.
+     * Stop-хук: Container.stopDevice()/stopAll() вызывает onStop(), а затем AWAIT этого метода.
      * Дописывает накопленную запись и закрывает базу журнала (синхронные операции),
      * поэтому данные гарантированно на диске до выхода воркера из памяти.
      */
-    async stopPromise(): Promise<void> {
+    async onStopAsync(): Promise<void> {
         this.closeJournal()
     }
 

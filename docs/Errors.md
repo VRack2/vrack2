@@ -37,7 +37,6 @@ import { ErrorManager, Rule } from "vrack2-core";
 
 ErrorManager.register(
   'Master',                  // Владелец (обычно название класса)
-  'ZEAJYEQFWCUM',            // Уникальный ID (9-18 символов, может быть хеш)
   'MASTER_ACCESS_DENIED',    // Читаемый код (рекомендуется префикс вендора)
   'Требуется повышение уровня доступа', // Описание
   {                          // Схема дополнительных данных
@@ -70,7 +69,7 @@ throw ErrorManager.make('MASTER_ACCESS_DENIED', { level: command.level });
 
 VRack2 поддерживает цепочки вложенных ошибок для детализации проблем.
 
-Например, если в `process` устройства произойдет ошибка - она будет перехвачена и обернута в `CTR_DEVICE_PROCESS_EXCEPTION`. Из текста ошибки будет понятно, что произошло исключение во время запуска `process`.
+Например, если в `onStart()` устройства произойдет ошибка - она будет перехвачена и обернута в `CONT_DEVICE_PROCESS_EXCEPTION`. Из текста ошибки будет понятно, что произошло исключение во время запуска `onStart()`.
 
 В VRack2 Manager можно посмотреть вложенные ошибки
 ![error-test](./assets/error/error-test.png)
@@ -82,15 +81,14 @@ VRack2 поддерживает цепочки вложенных ошибок �
   "stack": "Container: During process execution - the device threw an exception\n ... далее весь стектрейс",
   "message": "During process execution - the device threw an exception",
   "vError": true,
-  "vCode": "RJV0KT2DFZBZ",
-  "vShort": "CTR_DEVICE_PROCESS_EXCEPTION",
+  "vShort": "CONT_DEVICE_PROCESS_EXCEPTION",
   "vAdd": [
     "device"
   ],
   "vAddErrors": [
     {
-      "stack": "Error: Ошибка вовремя process устройства\n    at MyDevice.process (/home/tar/vrack2/devices/my-vendor/MyDevice.js:14:11)\n ... далее весь стектрейс",
-      "message": "Ошибка вовремя process устройства"
+      "stack": "Error: Ошибка во время onStart устройства\n    at MyDevice.onStart (/home/tar/vrack2/devices/my-vendor/MyDevice.js:14:11)\n ... далее весь стектрейс",
+      "message": "Ошибка во время onStart устройства"
     }
   ],
   "name": "Container",
@@ -106,8 +104,7 @@ VRack2 поддерживает цепочки вложенных ошибок �
 | `stack`      | Полный стек вызовов                      | "Container: During..." |
 | `message`    | Основное сообщение                       | "Access denied"        |
 | `vError`     | Флаг ошибки VRack2                       | `true`                 |
-| `vCode`      | Уникальный код                           | "RJV0KT2DFZBZ"         |
-| `vShort`     | Читаемый код                             | "CTR_DEVICE_ERROR"     |
+| `vShort`     | Читаемый код                             | "CONT_DEVICE_NF"       |
 | `vAdd`       | Список дополнительных полей              | `["device", "level"]`  |
 | `vAddErrors` | Массив вложенных ошибок                  | `[{...}]`              |
 | `device`     | Пример дополнительного поля              | "MyDevice"             |
@@ -117,9 +114,9 @@ VRack2 поддерживает цепочки вложенных ошибок �
 
 ```js
 try {
-  this.devices[key].process();
+  this.devices[key].onStart();
 } catch (error) {
-  throw ErrorManager.make('CTR_DEVICE_PROCESS_EXCEPTION', { 
+  throw ErrorManager.make('CONT_DEVICE_PROCESS_EXCEPTION', { 
     device: key 
   }).add(error); // Добавление вложенной ошибки
 }
@@ -164,9 +161,8 @@ ErrorManager.isError(error: any): boolean
 ErrorManager.isCode(error: any, code: string): boolean
 ```
 
-Поддерживает и код ошибки и строковую константу:
+Принимает читаемый код (`vShort`):
 
 ```ts
-if (ErrorManager.isCode(error, 'qNOQIWHGFOIUsadjph')) {}
 if (ErrorManager.isCode(error, 'EM_ERROR_CONVERT')) {}
 ```
