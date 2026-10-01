@@ -8,6 +8,8 @@ export default interface IApiKey {
     level: number;
     /** Key for access to VRack2 */
     key: string;
-    /** Key for traffic encryption  */
+    /** Legacy: shared secret for the channel key (empty for new/asymmetric keys) */
     private: string;
+    /** Client's P-256 public key (PEM). When set, the channel key is derived via ECDH. */
+    public?: string;
 }

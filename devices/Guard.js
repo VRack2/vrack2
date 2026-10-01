@@ -30,10 +30,20 @@ vrack2_core_1.ErrorManager.register('Guard', 'GUARD_CIPHER_FAILED', 'Error while
     error: vrack2_core_1.Rule.string().description('Error description string')
 });
 vrack2_core_1.ErrorManager.register('Guard', 'GUARD_PRIVATE_VERIFICATION_FAILED', 'Error while decrypting data');
+vrack2_core_1.ErrorManager.register('Guard', 'GUARD_RATE_LIMITED', 'Too many failed authorization attempts from this source. Try again later.');
 class Guard extends vrack2_core_1.Device {
     constructor() {
         super(...arguments);
         this.guardedClients = {};
+        /** In-memory per-source failed-auth counters (keyed by client IP, falling back to provider:client) */
+        this.rateLimit = new Map();
+        /**
+         * Server-side P-256 keypair for the asymmetric (ECDH) channel. Generated at start,
+         * never persisted. The public key is sent to cipher clients in apiKeyAuth; the
+         * private key stays here (used in deriveEK for ECDH).
+         */
+        this.serverPrivPem = '';
+        this.serverPubPem = '';
     }
     description() {
         return `Guard отвечает за управление клиентами, аутентификацию и шифрование данных. Он обрабатывает команды от клиентов, проверяет их авторизацию и обеспечивает безопасный обмен данными через шифрование AES-256. 
@@ -60,6 +70,11 @@ class Guard extends vrack2_core_1.Device {
         };
     }
     onStart() {
+        // Generate the server-side P-256 keypair used for the asymmetric (ECDH) channel.
+        // The public key is shared with cipher clients; the private key never leaves the server.
+        const kp = crypto_1.default.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+        this.serverPubPem = kp.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+        this.serverPrivPem = kp.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
         this.ports.output['register.command'].push({
             command: 'apiKeyAuth',
             short: 'Api Client authorize',
@@ -74,6 +89,7 @@ class Guard extends vrack2_core_1.Device {
             return: vrack2_core_1.Rule.object().fields({
                 cipher: vrack2_core_1.Rule.boolean().default(false).description('Does authorization require encryption?'),
                 verify: vrack2_core_1.Rule.string().example('9u49ipjeirhh').description('If this line is specified, you need to go through additional authorization with encryption'),
+                serverPub: vrack2_core_1.Rule.string().example('-----BEGIN PUBLIC KEY-----').description("Server P-256 public key (PEM) for the asymmetric channel; present when the key is asymmetric"),
                 level: vrack2_core_1.Rule.number().example(3).description('If the level is specified, then authorization was successful'),
                 authorize: vrack2_core_1.Rule.boolean().default(false).description('If the level is specified, then authorization was successful.'),
             }).description('Success authorized result')
@@ -81,13 +97,13 @@ class Guard extends vrack2_core_1.Device {
         this.ports.output['register.command'].push({
             command: 'apiPrivateAuth',
             short: 'Authorize with encrypt',
-            description: '',
+            description: 'Complete cipher authentication: send the challenge nonce GCM-encrypted (req seq) as a frame to prove the secret. After this the channel is encrypted.',
             level: 1000,
             owner: this.type,
             icon: 'person-fill-lock',
             handler: this.apiPrivateAuth.bind(this),
             rules: {
-                verify: vrack2_core_1.Rule.string().maxLength(120).example('f2kngj3tjl...==').description('Encrypted string using private key'),
+                frame: vrack2_core_1.Rule.string().maxLength(512).example('u1f9...==').description('GCM frame (base64url nonce‖ct‖tag) encrypting the challenge nonce'),
             },
             return: vrack2_core_1.Rule.object().fields({
                 cipher: vrack2_core_1.Rule.boolean().default(true).description('Does authorization require encryption?'),
@@ -113,6 +129,8 @@ class Guard extends vrack2_core_1.Device {
     apiKeyAuth(data, message) {
         return __awaiter(this, void 0, void 0, function* () {
             const client = this.getClient(message);
+            if (this.rateLimited(client))
+                throw vrack2_core_1.ErrorManager.make('GUARD_RATE_LIMITED');
             const req = {
                 providerType: 'Guard',
                 providerId: 0,
@@ -121,12 +139,33 @@ class Guard extends vrack2_core_1.Device {
                 level: 0,
                 data: { key: data.key }
             };
-            const key = yield this.ports.output['master.command'].push(req);
+            let key;
+            try {
+                key = yield this.ports.output['master.command'].push(req);
+            }
+            catch (error) {
+                this.rlFail(client);
+                throw error;
+            }
+            this.rlReset(client);
             client.key = key;
+            if (key.public) {
+                // Asymmetric cipher key (P-256): the channel key is derived via ECDH between
+                // the client's public key and the server keypair. Send the challenge (the client
+                // returns it ECDH-encrypted via apiPrivateAuth) plus the server public key.
+                client.cipher = false;
+                client.verify = crypto_1.default.randomBytes(16).toString('base64url');
+                client.inSeq = 1;
+                client.outSeq = 1;
+                return { verify: client.verify, cipher: true, serverPub: this.serverPubPem };
+            }
             if (key.private) {
+                // Legacy shared-secret cipher key (HKDF): kept for pre-existing keys.
                 client.private = key.private;
                 client.cipher = false;
-                client.verify = this.uid(8);
+                client.verify = crypto_1.default.randomBytes(16).toString('base64url');
+                client.inSeq = 1;
+                client.outSeq = 1;
                 return { verify: client.verify, cipher: true };
             }
             return this.autorize(client);
@@ -139,34 +178,47 @@ class Guard extends vrack2_core_1.Device {
      * If the private key was recognized correctly, the next message will already use encryption.
      *
      *
-     * 'verify' string to verify the authorization that the client encrypted with its key.
-     * This string should have been received after the “apiKeyAuth” command.
+     * 'frame' — the GCM-encrypted challenge (the 'verify' nonce received from apiKeyAuth).
+     * It is the first inbound frame (req seq = inSeq). A valid GCM auth tag plus a
+     * matching nonce proves the client holds the secret without revealing it.
      *
      * @see Guard.process
      * @see apiKeyAuth
-     * @param data Client data with verify string
+     * @param data Client data with the GCM proof frame
      */
     apiPrivateAuth(data, message) {
         return __awaiter(this, void 0, void 0, function* () {
             const client = this.getClient(message);
+            if (this.rateLimited(client))
+                throw vrack2_core_1.ErrorManager.make('GUARD_RATE_LIMITED');
+            if (!client.key || (!client.key.private && !client.key.public))
+                throw vrack2_core_1.ErrorManager.make('GUARD_CLIENT_NOT_AUTH');
+            let nonce;
             try {
-                const decr = this.decipherData(data.verify, client);
-                if (decr === client.verify)
-                    return this.autorize(client, true);
+                nonce = this.recvFrame(client, client.clientId, data.frame);
             }
             catch (error) {
+                this.rlFail(client);
                 throw vrack2_core_1.ErrorManager.make('GUARD_DECIPHER_FAILED', {
                     error: error.toString()
                 });
             }
-            throw vrack2_core_1.ErrorManager.make('GUARD_PRIVATE_VERIFICATION_FAILED');
+            if (nonce !== client.verify) {
+                this.rlFail(client);
+                throw vrack2_core_1.ErrorManager.make('GUARD_PRIVATE_VERIFICATION_FAILED');
+            }
+            this.rlReset(client);
+            return this.autorize(client, true);
         });
     }
     /**
      * Processes commands coming from providers clients
      *
      * Receives messages from the client, decrypts them and sends the command to the master for execution
-     * It encrypts the result of the wizard execution and returns it back to the Provider
+     * It encrypts the result of the command execution and returns it back to the Provider
+     *
+     * Channel state is decided at message arrival: if the client was already cipher-authorized
+     * the payload is a GCM frame; otherwise it is plain JSON (handshake commands, or a plain key).
      *
      * @param data Provider client message
     */
@@ -174,14 +226,21 @@ class Guard extends vrack2_core_1.Device {
         return __awaiter(this, void 0, void 0, function* () {
             let client;
             let clientData;
+            let wasCipher = false;
             try {
                 client = this.getClient(data);
-                clientData = JSON.parse(this.decipherData(data.data, client));
+                wasCipher = client.authorize && client.cipher;
+                if (wasCipher) {
+                    clientData = JSON.parse(this.recvFrame(client, data.clientId, data.data.toString('utf8')));
+                }
+                else {
+                    clientData = JSON.parse(data.data.toString('utf8'));
+                }
             }
             catch (error) {
                 if (error instanceof vrack2_core_1.CoreError)
-                    return this.response(client, {}, 'error', error);
-                return this.response(client, {}, 'error', vrack2_core_1.ErrorManager.make('GUARD_INCORRECT_CLIENT_JSON', { err: error.message }));
+                    return this.response(client, {}, 'error', error, wasCipher);
+                return this.response(client, {}, 'error', vrack2_core_1.ErrorManager.make('GUARD_INCORRECT_CLIENT_JSON', { err: error.message }), wasCipher);
             }
             Object.assign(clientData, {
                 providerType: data.providerType,
@@ -192,12 +251,12 @@ class Guard extends vrack2_core_1.Device {
             try {
                 this.Container.emit('Guard.client.command', clientData);
                 const result = yield this.ports.output['master.command'].push(clientData);
-                data.data = this.response(client, clientData, 'success', result);
+                data.data = this.response(client, clientData, 'success', result, wasCipher);
                 this.Container.emit('Guard.client.command.success', { clientData, result });
             }
             catch (error) {
                 this.Container.emit('Guard.client.command.error', { clientData, error });
-                data.data = this.response(client, clientData, 'error', error);
+                data.data = this.response(client, clientData, 'error', error, wasCipher);
             }
             return data;
         });
@@ -212,7 +271,10 @@ class Guard extends vrack2_core_1.Device {
             return;
         if (!this.guardedClients[data.providerId] || !this.guardedClients[data.providerId][data.clientId])
             return;
-        const stData = this.cipherData(JSON.stringify(data), this.guardedClients[data.providerId][data.clientId]);
+        const client = this.guardedClients[data.providerId][data.clientId];
+        const stData = client.cipher
+            ? this.sendFrame(client, data.clientId, JSON.stringify(data))
+            : JSON.stringify(data);
         const send = {
             registered: true,
             providerType: '',
@@ -232,7 +294,7 @@ class Guard extends vrack2_core_1.Device {
             this.guardedClients[data.providerId] = {};
         this.Container.emit('Guard.client.register', data);
         this.guardedClients[data.providerId][data.clientId] = Object.assign({
-            authorize: false, cipher: false, private: '', level: 1000, verify: ''
+            authorize: false, cipher: false, private: '', level: 1000, verify: '', inSeq: 1, outSeq: 1
         }, data);
     }
     /**
@@ -268,7 +330,7 @@ class Guard extends vrack2_core_1.Device {
      *
      * @see inputClientsCommand
     */
-    response(client, request, result, resultData) {
+    response(client, request, result, resultData, wasCipher = false) {
         request.result = result;
         if (result === 'error')
             request.resultData = vrack2_core_1.CoreError.objectify(resultData);
@@ -277,8 +339,10 @@ class Guard extends vrack2_core_1.Device {
         let ret = JSON.stringify(request);
         if (client === undefined)
             return ret;
-        if (client.cipher)
-            ret = this.cipherData(ret, client);
+        // The response is framed only if the channel was already cipher-authorized when
+        // the request arrived (so the proof response stays plain, like its request).
+        if (wasCipher)
+            ret = this.sendFrame(client, client.clientId, ret);
         return ret;
     }
     /**
@@ -297,40 +361,128 @@ class Guard extends vrack2_core_1.Device {
         return this.guardedClients[message.providerId][message.clientId];
     }
     /**
-     * Decrypts data coming from the client
+     * Normalizes a Buffer to the Uint8Array type the crypto APIs expect.
+     * Purely a type-level cast (Buffer is a Uint8Array at runtime); it silences the
+     * @types/node / TypeScript ≥5.7 generic skew where Buffer is Uint8Array<ArrayBufferLike>
+     * but the crypto signatures expect Uint8Array<ArrayBuffer>.
+     */
+    u8(b) { return b; }
+    /**
+     * Derives the per-channel encryption key (32 bytes) from the client secret
+     * using HKDF-SHA256, so the raw secret is never used directly as a cipher key.
      *
-     * @see apiPrivateAuth
-    */
-    decipherData(data, client) {
-        if (!client.cipher)
-            return data.toString('utf8');
-        if (!client.key) {
-            throw vrack2_core_1.ErrorManager.make('GUARD_DECIPHER_FAILED', { error: 'Key in client not found' });
+     * @param client Internal guard client
+     */
+    deriveEK(client) {
+        if (!client.key || (!client.key.private && !client.key.public))
+            throw vrack2_core_1.ErrorManager.make('GUARD_CIPHER_FAILED', { error: 'Key in client not found' });
+        // Asymmetric (P-256) channel: derive the key from the ECDH shared secret between
+        // the client's public key and the server private key. No shared secret on the wire.
+        if (client.key.public) {
+            const shared = crypto_1.default.diffieHellman({
+                privateKey: crypto_1.default.createPrivateKey(this.serverPrivPem),
+                publicKey: crypto_1.default.createPublicKey(client.key.public)
+            });
+            return Buffer.from(crypto_1.default.hkdfSync('sha256', this.u8(shared), this.u8(Buffer.alloc(0)), this.u8(Buffer.from('vrack2/v2/ek', 'utf8')), 32));
         }
-        const cipher = crypto_1.default.createDecipheriv('aes-256-cbc', client.key.private, client.key.key);
-        cipher.setEncoding('base64');
-        let decrypted = '';
-        decrypted += cipher.update(data.toString('utf-8'), 'base64');
-        decrypted += cipher.final('utf8');
-        return decrypted;
+        // Legacy shared-secret channel (HKDF) for pre-existing keys with a private secret.
+        const ikm = this.u8(Buffer.from(client.key.private, 'utf8'));
+        const salt = this.u8(Buffer.from('vrack2/v2', 'utf8'));
+        const info = this.u8(Buffer.from('vrack2/v2/ek', 'utf8'));
+        return Buffer.from(crypto_1.default.hkdfSync('sha256', ikm, salt, info, 32));
     }
     /**
-     * Encrypting data before sending to the client
-     *
-     * @see apiPrivateAuth
-    */
-    cipherData(data, client) {
-        if (!client.cipher)
-            return data;
-        if (!client.key) {
-            throw vrack2_core_1.ErrorManager.make('GUARD_CIPHER_FAILED', { error: 'Key in client not found' });
+     * Builds the authenticated additional data binding the frame to this session,
+     * channel, sequence number and direction. Including the per-session id (the
+     * authorization challenge) makes the AAD unique to one authentication session, so a
+     * captured frame cannot be replayed into a later session even if the server reuses
+     * the same clientId and the sequence counter lines up.
+     */
+    buildAAD(clientId, seq, dir, session) {
+        return Buffer.from(JSON.stringify({ c: clientId, s: seq, d: dir, v: session }), 'utf8');
+    }
+    /**
+     * Encrypts a payload into a frame: base64url(nonce ‖ ciphertext ‖ authTag), AES-256-GCM.
+     */
+    frameEncrypt(payload, ek, clientId, seq, dir, session) {
+        const nonce = crypto_1.default.randomBytes(12);
+        const cipher = crypto_1.default.createCipheriv('aes-256-gcm', this.u8(ek), this.u8(nonce), { authTagLength: 16 });
+        cipher.setAAD(this.u8(this.buildAAD(clientId, seq, dir, session)));
+        const ct = Buffer.concat([this.u8(cipher.update(payload, 'utf8')), this.u8(cipher.final())]);
+        return Buffer.concat([this.u8(nonce), this.u8(ct), this.u8(cipher.getAuthTag())]).toString('base64url');
+    }
+    /**
+     * Decrypts a frame (base64url nonce ‖ ciphertext ‖ authTag) back to the payload.
+     * Throws on a bad auth tag, mismatched AAD (session/channel/sequence/direction) or wrong sequence.
+     */
+    frameDecrypt(frame, ek, clientId, seq, dir, session) {
+        const raw = Buffer.from(frame, 'base64url');
+        if (raw.length < 28)
+            throw vrack2_core_1.ErrorManager.make('GUARD_DECIPHER_FAILED', { error: 'Frame too short' });
+        const nonce = raw.subarray(0, 12);
+        const tag = raw.subarray(raw.length - 16);
+        const ct = raw.subarray(12, raw.length - 16);
+        const decipher = crypto_1.default.createDecipheriv('aes-256-gcm', this.u8(ek), this.u8(nonce), { authTagLength: 16 });
+        decipher.setAAD(this.u8(this.buildAAD(clientId, seq, dir, session)));
+        decipher.setAuthTag(this.u8(tag));
+        return Buffer.concat([this.u8(decipher.update(this.u8(ct))), this.u8(decipher.final())]).toString('utf8');
+    }
+    /**
+     * Encrypts an outbound (server→client) frame and advances the outbound sequence.
+     */
+    sendFrame(client, clientId, payload) {
+        const ek = this.deriveEK(client);
+        const seq = client.outSeq;
+        const frame = this.frameEncrypt(payload, ek, clientId, seq, 'res', client.verify);
+        client.outSeq = seq + 1;
+        return frame;
+    }
+    /**
+     * Decrypts an inbound (client→server) frame and advances the inbound sequence.
+     * The sequence only advances after a successful (authenticated) decrypt.
+     */
+    recvFrame(client, clientId, frame) {
+        const ek = this.deriveEK(client);
+        const seq = client.inSeq;
+        const payload = this.frameDecrypt(frame, ek, clientId, seq, 'req', client.verify);
+        client.inSeq = seq + 1;
+        return payload;
+    }
+    /**
+     * Rate limiting for authentication attempts (brute-force protection).
+     * Counted per source (client IP, falling back to provider:client). In-memory:
+     * this is per-Guard state and does not need to survive a restart.
+     */
+    rlKey(client) {
+        const ip = client && client.additional && client.additional.ip;
+        return ip || `${client === null || client === void 0 ? void 0 : client.providerId}:${client === null || client === void 0 ? void 0 : client.clientId}`;
+    }
+    /** True if the source has exhausted its failed-auth budget in the current window. */
+    rateLimited(client) {
+        const now = Date.now();
+        const e = this.rateLimit.get(this.rlKey(client));
+        if (!e)
+            return false;
+        if (now >= e.resetAt) {
+            this.rateLimit.delete(this.rlKey(client));
+            return false;
         }
-        const cipher = crypto_1.default.createCipheriv('aes-256-cbc', client.key.private, client.key.key);
-        cipher.setEncoding('utf8');
-        let encrypted = '';
-        encrypted += cipher.update(data, 'utf8', 'base64');
-        encrypted += cipher.final('base64');
-        return encrypted;
+        return e.count >= Guard.RL_MAX_ATTEMPTS;
+    }
+    /** Record a failed authentication attempt for the source. */
+    rlFail(client) {
+        const k = this.rlKey(client);
+        const now = Date.now();
+        let e = this.rateLimit.get(k);
+        if (!e || now >= e.resetAt) {
+            e = { count: 0, resetAt: now + Guard.RL_WINDOW_MS };
+            this.rateLimit.set(k, e);
+        }
+        e.count++;
+    }
+    /** Clear the source's failure budget (e.g. after a successful auth). */
+    rlReset(client) {
+        this.rateLimit.delete(this.rlKey(client));
     }
     /**
      * Generates a random string for encryption and subsequent authorization check
@@ -341,4 +493,8 @@ class Guard extends vrack2_core_1.Device {
         return crypto_1.default.randomBytes(length).toString('hex');
     }
 }
+/** Sliding window for rate limiting (60 s) */
+Guard.RL_WINDOW_MS = 60000;
+/** Max failed auth attempts per source within the window */
+Guard.RL_MAX_ATTEMPTS = 20;
 exports.default = Guard;

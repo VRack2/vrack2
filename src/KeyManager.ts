@@ -15,7 +15,8 @@ const defaultKey: IApiKey = {
     description: 'Default administrator api key',
     level: 1,
     key: 'default',
-    private: ''
+    private: '',
+    public: ''
 }
 
 ErrorManager.register(
@@ -86,12 +87,10 @@ export default class KeyManager extends Device {
             return: Rule.array().content(Rule.object().fields({
                 id: Rule.string().example('qjkl13j5klj').description('Unique key ID'),
                 name: Rule.string().example('Lang name').description('Short unique lang name for this key'),
-                description: Rule.string().example('Use description').description('Description of the purpose of the key'),
                 level: Rule.number().example(3).integer().description('Key access level. Can be 1/2/3/1000 by default'),
-                key: Rule.string().example('rlmtjpopefe').description('Key for access to VRack2'),
-                private: Rule.string().example('nrono3bgo2112knj4ngkj').description('Key for traffic encryption')
+                key: Rule.string().example('rlmtjpopefe').description('Key for access to VRack2')
             }))
-            .description('Return a List of all keys')
+            .description('Return a List of all keys (id, name, key, level only - no key material)')
         })
 
         this.ports.output['register.command'].push({
@@ -118,7 +117,8 @@ export default class KeyManager extends Device {
                 description: Rule.string().example('Use description').description('Description of the purpose of the key'),
                 level: Rule.number().example(3).integer().description('Key access level. Can be 1/2/3/1000 by default'),
                 key: Rule.string().example('rlmtjpopefe').description('Key for access to VRack2'),
-                private: Rule.string().example('nrono3bgo2112knj4ngkj').description('Key for traffic encryption')
+                private: Rule.string().example('-----BEGIN PRIVATE KEY-----').description('One-time client private key (PEM) - NOT stored on the server'),
+                public: Rule.string().example('-----BEGIN PUBLIC KEY-----').description("Client's P-256 public key (PEM), stored on the server")
             })
         })
 
@@ -158,10 +158,13 @@ export default class KeyManager extends Device {
     }
 
     /**
-     * Returns a list of all access keys along with private keys
+     * Returns a list of access keys.
+     * Only safe metadata is exposed (id, name, key, level): the `private` secret,
+     * the `public` key and the `description` are never returned, so a read-level
+     * client cannot read the key material of other keys.
     */
     async apiKeyList() {
-        return this.keys
+        return this.keys.map(({ id, name, key, level }) => ({ id, name, key, level }))
     }
 
     /**
@@ -172,18 +175,31 @@ export default class KeyManager extends Device {
      * @see KeyManager.onStart() Register command apiKeyAdd
     */
     async apiKeyAdd(data: { level: number, name:string, description:string, cipher: boolean }){
+        // For cipher keys, generate a P-256 keypair: the public key is stored on the server
+        // (used for auth + ECDH), the private key is returned ONCE to the caller and never
+        // persisted (the client keeps it). This is the asymmetric replacement for the old
+        // shared-secret model.
+        let clientPub = ''
+        let clientPrivOut = ''
+        if (data.cipher) {
+            const kp = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' })
+            clientPub = kp.publicKey.export({ type: 'spki', format: 'pem' }).toString()
+            clientPrivOut = kp.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
+        }
         const nKey: IApiKey = {
             id: this.uid(10),
             name: data.name,
             description: data.description,
             level: data.level,
             key: this.uid(8),
-            private: data.cipher?this.uid(16):''
+            public: clientPub,
+            private: ''
         }
         this.keys.push(nKey)
         this.Container.emit('KeyManager.key.add', nKey )
         this.syncKeys()
-        return nKey
+        // Return the record plus the one-time private key (NOT stored on the server)
+        return { ...nKey, private: clientPrivOut }
     }
 
     /**
