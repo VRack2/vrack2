@@ -158,11 +158,8 @@ class System extends vrack2_core_1.Device {
     */
     apiSystemMetric(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.DeviceMetrics);
-            let precision = data.precision;
-            if (!isNaN(parseInt(precision)))
-                precision = parseInt(precision);
-            return DM.read(data.device, data.metric, data.period, precision, data.func);
+            const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.JournalDbMetrics);
+            return DM.read(data.device, data.metric, data.period, data.precision);
         });
     }
     /**

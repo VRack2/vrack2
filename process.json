@@ -1,4 +1,7 @@
 {
+    "bootstrap": {
+        "PortLogger": { "options": { "enabled": false } }
+    },
     "devices": [
         {
             "id": "Master",

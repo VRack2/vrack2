@@ -56,15 +56,20 @@
 **Ответ (пример):**
 ```json
 {
-  "cipher": false,
+  "cipher": true,
   "verify": "9u49ipjeirhh",
+  "serverPub": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
   "level": 3,
   "authorize": false
 }
 ```
 
-- Если поле `verify` присутствует — требуется **дополнительная аутентификация с шифрованием**.
-- Поле `level` указывает ваш текущий уровень доступа.
+- Если поле `verify` присутствует — требуется **продолжить аутентификацию через `apiPrivateAuth`**
+  (отправить `verify`, зашифрованный в GCM-кадре, см. раздел «Шифрование»).
+- `serverPub` — публичный ключ P-256 сервера (PEM), возвращается для асимметричных ключей
+  и нужен для вывода ключа канала (ECDH).
+- Поле `level` указывает ваш текущий уровень доступа: чем меньше число, тем больше привилегий
+  (0 — суперадминистратор).
   - 1 - Администратор
   - 2 - Оператор
   - 3 - Диспетчер
@@ -75,14 +80,15 @@
 
 Уровень доступа: **1000**
 
-Если сервер вернул `verify`, зашифруйте его с помощью вашего **приватного ключа** и отправьте обратно.
+Если сервер вернул `verify`, зашифруйте его **GCM-кадром** (см. раздел «Шифрование»)
+и отправьте поле `frame`.
 
 **Запрос:**
 ```json
 {
   "command": "apiPrivateAuth",
   "data": {
-    "verify": "зашифрованная_строка"
+    "frame": "u1f9...=="
   }
 }
 ```
@@ -98,31 +104,31 @@
 
 > После успешного выполнения `apiPrivateAuth` **весь дальнейший обмен данными должен быть зашифрован**.
 
-## Шифрование (AES-CBC)
+## Шифрование (ECDH P-256 / HKDF / AES-256-GCM)
 
-Рекомендуется использовать библиотеку **CryptoJS**.
+Ключевым материалом канала служит **ключ 32 байта (`ek`)**, выведенный через HKDF-SHA256:
 
-```javascript
-// Шифрование
-function cipherData(data, privateKey, key) {
-  return CryptoJS.AES.encrypt(data, CryptoJS.enc.Utf8.parse(privateKey), {
-    iv: CryptoJS.enc.Utf8.parse(key),
-    mode: CryptoJS.mode.CBC
-  }).toString();
-}
+- **Асимметричные ключи** (созданы через `apiKeyAdd` с `cipher: true`, у ключа есть P-256 публичный ключ):
+  `ek = HKDF-SHA256(ikm = ECDH(serverPriv, clientPub), salt = "", info = "vrack2/v2/ek")`.
+  Публичный ключ сервера (`serverPub`) приходит в ответе `apiKeyAuth`; приватный ключ клиента
+  никогда не передаётся по каналу.
+- **Легаси-ключи** (общий секрет `private`):
+  `ek = HKDF-SHA256(ikm = private, salt = "vrack2/v2", info = "vrack2/v2/ek")`.
 
-// Расшифровка
-function decipherData(encryptedData, privateKey, key) {
-  const decrypted = CryptoJS.AES.decrypt(encryptedData, CryptoJS.enc.Utf8.parse(privateKey), {
-    iv: CryptoJS.enc.Utf8.parse(key),
-    mode: CryptoJS.mode.CBC
-  });
-  return decrypted.toString(CryptoJS.enc.Utf8);
-}
-```
+Каждое сообщение зашифрованного канала — **кадр**:
 
-- `key` — ваш API-ключ (используется как IV)
-- `privateKey` — ваш приватный ключ (пароль для шифрования)
+- Шифрование: **AES-256-GCM** (nonce — 12 случайных байт, auth tag — 16 байт).
+- Формат кадра: `base64url(nonce ‖ ciphertext ‖ tag)`.
+- AAD: `JSON { "c": <clientId>, "s": <seq>, "d": "req" | "res", "v": <verify> }`, где
+  - `verify` — challenge из ответа `apiKeyAuth` (привязывает кадр к сессии аутентификации);
+  - `seq` — счётчик кадров, отдельный на каждое направление (`req`/`res`), увеличивается на 1;
+  - `clientId` — идентификатор клиента, назначенный сервером при подключении.
+
+Неправильный ключ, рассогласование AAD (сессия/счётчик/направление) или повреждённый tag
+приводят к ошибке `GUARD_DECIPHER_FAILED`.
+
+Готовый рабочий пример клиента (подключение, аутентификация, зашифрованный вызов команды) —
+[vrack2-client.mjs](./vrack2-client.mjs).
 
 ## Получение списка команд
 

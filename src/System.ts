@@ -1,4 +1,4 @@
-import { BasicMetric, Device, DeviceManager, DeviceMetrics, Metric, Port, Rule, StructureStorage } from "vrack2-core";
+import { BasicMetric, Device, DeviceManager, JournalDbMetrics, Metric, Port, Rule, StructureStorage } from "vrack2-core";
 import { IContainerStructure } from "vrack2-core/lib/Container";
 import os from "os"
 import process from "process"
@@ -158,10 +158,8 @@ export default class System extends Device {
    * Obtaining system metrics. Those that were initialized at the VRack2 level
   */
   async apiSystemMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-    const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', DeviceMetrics) as DeviceMetrics
-    let precision: string | number = data.precision
-    if (!isNaN(parseInt(precision))) precision = parseInt(precision)
-    return DM.read(data.device, data.metric, data.period, precision, data.func)
+    const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', JournalDbMetrics) as JournalDbMetrics
+    return DM.read(data.device, data.metric, data.period, data.precision)
   }
 
   /**

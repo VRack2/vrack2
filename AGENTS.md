@@ -15,7 +15,7 @@ VRack2 — рантайм событийно-ориентированных се
   - `onRegister()` — инициализация до портов/соединений (обработчики динамических портов)
   - `onStart()` — запуск (таймеры, подписки)
   - `onStartAsync()` — асинхронная инициализация (создание таблиц, подключение и т.п.), контейнер её ждет
-- **Сервис** — JSON-файл в `services/<id>.json`: список устройств, их опции и connections (`"A.port -> B.port"`). Рядом `<id>.meta.json`: `autoStart`, `autoReload`, `journal`, `isolated` и т.д.
+- **Сервис** — JSON-файл в `services/<id>.json`: список устройств, их опции и connections (`"A.port -> B.port"`). Рядом `<id>.meta.json`: `autoStart`, `autoReload`, `isolated` и т.д.
 - **Master** — запущенный платформенный сервис (`node ./run/index`), управляет другими сервисами: старт/стоп, статус, ошибки, действия устройств.
 - **Bootstrap** — общие ресурсы сервиса, секция `bootstrap` в сервис-файле. Пример: БД. Устройство получает её через `this.getDB()`, не принимает коннект в конструкторе.
 - **Границы**: устройство — единица переиспользования (вендор + имя, drop-in). Сервис — единица запуска, отказа и консистентности: один worker, общий доступ к ресурсам (например, одной БД), общая судьба при краше.
@@ -55,17 +55,12 @@ devices/<vendor>/
 ## Как запускать и тестировать
 
 - Мастер: `node ./run/index` (из корня репозитория)
-- Управление через MCP (если доступен):
-  - `vrack2_service_list` / `vrack2_service_status` — список и статус сервисов
-  - `vrack2_service_start` / `vrack2_service_stop` — старт/стоп
-  - `vrack2_service_errors` / `vrack2_service_errors_clear` — ошибки
-  - `vrack2_service_device_action` — вызов экшена устройства (`{service, device, action, data}`)
-  - `vrack2_service_device_push` — пуш в входной порт (`{service, device, port, data}`)
-  - `vrack2_service_device_shares` — живое состояние устройства
-  - `vrack2_service_device_metric` — временные ряды метрик (vrack-db)
-  - `vrack2_service_log` — журнал событий сервиса (если `journal: true` в meta)
-  - `vrack2_device_vendors` / `vrack2_device_list` / `vrack2_device_info` — интроспекция контрактов устройств
-  - `vrack2_commands_list` — все доступные команды платформы
+- Управление через MCP (если доступен) — **3 универсальных тула** (каталог команд открывается во время выполнения):
+  - `commands_list` — таблица всех команд платформы (+ `serviceCommandsList` — список субмастер-команд сервиса)
+  - `command_info {name}` — карточка команды: параметры (name/type/required/example) и форма return
+  - `command_execute {name, data}` — прямое выполнение любой команды; команды с параметром `service` маршрутизируются в воркер запущенного сервиса
+  - субмастер-команды сервиса (журнал, экшены устройств, метрики, shares) — сначала `command_execute {name: "serviceCommandsList", data: {service}}` для полного каталога с карточками, затем их `command_execute`
+  - команды: `serviceStart/Stop`, `serviceUpdateList` (список), `service` (статус), `serviceErrors/Clear`, `serviceLog/Set/Stats/Clear`, `serviceDeviceAction/Push/Shares/Metric`, `deviceProcess/Stop/Status`, `vendorList/Devices/DeviceInfo`, `apiKeyList/Add/Delete` — имена из `commands_list`
 - Проверка устройства без мастера: `require('vrack2-core')` → `new core.DeviceManager(...)` → `dm.get('vendor.Device')` в чистом процессе (см. `src/boot/DeviceManager.ts` в core).
 
 ## Практические замечания

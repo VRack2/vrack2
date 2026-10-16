@@ -30,6 +30,11 @@ class Serivce extends vrack2_core_1.Device {
             'device.event': 'event'
         };
         /**
+         * Guard: shutdown() may be triggered concurrently (device.terminate +
+         * uncaughtException); the first call wins, the rest are no-ops
+         */
+        this.shuttingDown = false;
+        /**
          * Service container
         */
         this.ServiceContainer = new vrack2_core_1.Container('', {});
@@ -51,6 +56,14 @@ class Serivce extends vrack2_core_1.Device {
             name: '', group: '', description: '',
             system: false, autoStart: false, autoReload: false, isolated: false
         };
+        /***
+         * Render pull for service shares data
+         */
+        this.renderPull = new Set();
+        /**
+         * Render timer
+         */
+        this.renderTimer = false;
         /**
          * Индекс для захвата порта устройства
          */
@@ -80,6 +93,7 @@ class Serivce extends vrack2_core_1.Device {
     checkOptions() {
         return {
             'mainProcessPath': vrack2_core_1.Rule.string().required().default('vrack2-core.MainProcess').description('Main process class path'),
+            'renderDelay': vrack2_core_1.Rule.number().integer().min(10).max(3000).default(10).description('Minimal render delay for render shares'),
             'uncaughtTerminate': vrack2_core_1.Rule.boolean().default(true).description('Terminate service if call uncaught exception'),
         };
     }
@@ -376,18 +390,23 @@ class Serivce extends vrack2_core_1.Device {
     apiServiceCheck(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const service = vrack2_core_1.ImportManager.importJSON(data.info.filePath);
+                const service = this.normalizeServiceBootstrap(vrack2_core_1.ImportManager.importJSON(data.info.filePath));
                 const MainProcessClass = yield vrack2_core_1.ImportManager.importClass(this.options.mainProcessPath);
                 const MainProcessEx = new MainProcessClass({ id: data.info.id, service });
                 MainProcessEx.Container.parent = this.Container;
+                this.MainProcess = MainProcessEx;
                 this.ServiceContainer = MainProcessEx.Container;
                 this.Serviceinfo = data.info;
                 this.ServiceMeta = data.meta;
                 yield this.bindTerminate();
                 yield this.bindRenderEvent();
-                MainProcessEx.check();
-                // Ставим в очередь завершение процесса
-                setTimeout(() => { process.exit(); });
+                // Ожидаем завершения проверки: иначе асинхронная ошибка check()
+                // сработает после отправки ответа "success", и сломанная конфигурация
+                // будет ошибочно принята за валидную.
+                yield MainProcessEx.check();
+                // Ставим в очередь завершение воркера через единственную точку shutdown()
+                // (destroyAll boot-классов закроет journal store, если check что-то залогировал)
+                setTimeout(() => { this.shutdown(); });
             }
             catch (error) {
                 const CE = vrack2_core_1.ErrorManager.make('SERVICE_CONTAINER_ERROR').add(error);
@@ -404,15 +423,21 @@ class Serivce extends vrack2_core_1.Device {
     */
     apiServiceStartSafe(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            const service = yield vrack2_core_1.ImportManager.importJSON(data.info.filePath);
+            const service = this.normalizeServiceBootstrap(yield vrack2_core_1.ImportManager.importJSON(data.info.filePath));
             const MainProcessClass = yield vrack2_core_1.ImportManager.importClass(this.options.mainProcessPath);
             const MainProcessEx = new MainProcessClass({ id: data.info.id, service, confFile: data.info.configPath });
             MainProcessEx.Container.parent = this.Container;
+            this.MainProcess = MainProcessEx;
             this.ServiceContainer = MainProcessEx.Container;
             this.ServiceContainer.meta = data.meta;
             this.Serviceinfo = data.info;
             this.ServiceMeta = data.meta;
-            // Пробрасываем контейнер и мета сразу после создания (до run()),
+            // Сначала «собрать» контейнер: загрузить boot-классы и устройства.
+            // ServiceLogger.getBootClass требует, чтобы Bootstrap.loaded уже был заполнен
+            // (loadBootList живёт в check()), иначе журнал сервисов молча теряется.
+            // run() идемпотентен: повторный check() + runStart() безопасны.
+            yield MainProcessEx.check();
+            // Пробрасываем контейнер и мета до runStart(),
             // чтобы внешнее устройство (ServiceLogger) успело подписаться на события запуска
             this.ports.output['container'].push({ container: this.ServiceContainer, meta: data.meta });
             yield this.bindRenderEvent();
@@ -576,11 +601,9 @@ class Serivce extends vrack2_core_1.Device {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.ServiceContainer.devices[data.device])
                 throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF');
-            const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.DeviceMetrics);
-            let precision = data.precision;
-            if (!isNaN(parseInt(precision)))
-                precision = parseInt(precision);
-            return DM.read(data.device, data.metric, data.period, precision, data.func);
+            // const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', VrackDbMetrics) as VrackDbMetrics
+            const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.JournalDbMetrics);
+            return DM.read(data.device, data.metric, data.period, data.precision);
         });
     }
     /**
@@ -591,11 +614,8 @@ class Serivce extends vrack2_core_1.Device {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.Container.devices[data.device])
                 throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF');
-            const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.DeviceMetrics);
-            let precision = data.precision;
-            if (!isNaN(parseInt(precision)))
-                precision = parseInt(precision);
-            return DM.read(data.device, data.metric, data.period, precision, data.func);
+            const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.JournalDbMetrics);
+            return DM.read(data.device, data.metric, data.period, data.precision);
         });
     }
     /**
@@ -641,15 +661,38 @@ class Serivce extends vrack2_core_1.Device {
     }
     /**
      * Bind render device event
-      *
-     * Broadcast the device render payload directly to subscribers
+     *
+     * Update render pull
+     *
+     * @see renderPull
      */
     bindRenderEvent() {
         return __awaiter(this, void 0, void 0, function* () {
             this.ServiceContainer.on('device.render', (data) => {
-                this.broadcast(this.makeBroadcastChannel(data.device, 'render'), data.trace);
+                this.renderPull.add(data.device);
+                if (!this.renderTimer)
+                    this.serviceRender();
             });
         });
+    }
+    /**
+     * Send broadcast for device render event
+     *
+     * @see bindRenderEvent
+     */
+    serviceRender() {
+        if (!this.renderPull.size)
+            return;
+        this.renderPull.forEach((deviceId) => {
+            const device = this.ServiceContainer.devices[deviceId];
+            if (device)
+                this.broadcast(this.makeBroadcastChannel(deviceId, 'render'), device.shares);
+        });
+        this.renderPull.clear();
+        this.renderTimer = setTimeout(() => {
+            this.renderTimer = false;
+            this.serviceRender();
+        }, this.options.renderDelay);
     }
     /**
      * Convert object to string using util.inspect
@@ -700,58 +743,107 @@ class Serivce extends vrack2_core_1.Device {
     // }
     /**
      * Graceful stop of the running service container and worker self-exit.
-     *
-     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `onStop()` / `await onStopAsync()` hooks).
-     * 2) Our own container `stopAll()` — ServiceLogger's `onStopAsync()` flushes the journal to disk;
-     *    Container.stopDevice awaits each device's onStopAsync(), so the write completes before exit.
-     * 3) The worker exits on its own: this thread was spawned for the service, and nobody else will terminate it.
-     *    On the main side the pending request is rejected with WM_WORKER_EXIT by the exit handler — a normal outcome.
+     * Все завершающие процедуры — в единственной точке shutdown() (см. там).
+     * Main сбросил conf.autoReload перед командой, поэтому exit не вызовет автоперезапуск.
      */
     apiServiceStop(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this.ServiceContainer)
                 throw vrack2_core_1.ErrorManager.make('SERVICE_CONTAINER_ERROR');
-            // Останавливаем контейнер пользователя, сохраняя первую ошибку для уведомления main
-            let err = null;
-            try {
-                yield this.ServiceContainer.stopAll();
+            return this.shutdown();
+        });
+    }
+    /**
+     * Единственная точка завершения воркера сервиса.
+     * Все пути (команда stop, device.terminate, uncaughtException, ошибки start/check)
+     * сходятся сюда, чтобы завершающие процедуры отрабатывали одинаково:
+     * 1) Если есть ошибка — уведомляем main ДО graceful-стопа, пока каналы живы:
+     *    висящий onStopAsync не оставит main в неведении.
+     * 2) Graceful stop: MainProcess.stop() — onStop()/onStopAsync() устройств +
+     *    Bootstrap.destroyAll() — onDestroy() boot-классов (ServiceLogger/PortLogger):
+     *    закрытие journal store и дописывание активных сегментов на диск.
+     *    (fallback: ServiceContainer.stopAll(), если MainProcess не создан).
+     * 3) Остановка worker-контейнера (Service/Master/WorkerProvider).
+     * 4) process.exit(0) — main воспринимает выход воркера как нормальный исход (WM_WORKER_EXIT).
+     * Идемпотентен: повторные вызовы игнорируются (shuttingDown).
+     */
+    shutdown(error) {
+        return __awaiter(this, void 0, void 0, function* () {
+            if (this.shuttingDown)
+                return;
+            this.shuttingDown = true;
+            if (error) {
+                this.notifyMainError(error);
             }
-            catch (e) {
-                err = e;
+            let stopErr = null;
+            if (this.MainProcess) {
+                try {
+                    yield this.MainProcess.stop();
+                }
+                catch (e) {
+                    stopErr = e;
+                }
             }
-            // Останавливаем свой контейнер: ServiceLogger.onStopAsync() дописывает журнал в базу.
-            // Ошибки остановки своего контейнера не блокируют выход воркера
+            else if (this.ServiceContainer) {
+                try {
+                    yield this.ServiceContainer.stopAll();
+                }
+                catch (e) {
+                    stopErr = e;
+                }
+            }
             try {
                 yield this.Container.stopAll();
             }
             catch (e) {
                 console.error(`[Service] failed to stop worker container: ${e.message}`);
             }
-            // Ошибка graceful-остановки: уведомляем main, пока каналы живы, и завершаем поток.
-            // Main сбросил conf.autoReload перед командой, поэтому exit не вызовет автоперезапуск
-            if (err)
-                return this.serviceTerminate(err);
+            // Ошибка graceful-стопа (путь apiServiceStop): уведомляем main после стопа
+            if (stopErr && !error) {
+                this.notifyMainError(stopErr);
+            }
             process.exit(0);
         });
     }
+    notifyMainError(error) {
+        try {
+            this.ports.output['send'].push({
+                command: 'error',
+                threadId: worker_threads_1.threadId,
+                error: vrack2_core_1.CoreError.objectify(error)
+            });
+        }
+        catch (e) {
+            console.error(`[Service] failed to notify main: ${e.message}`);
+        }
+    }
     /**
-     * Send termiate errro and terminate service process
+     * Терминальная ошибка сервиса: уведомление + завершение через единственную точку shutdown()
      */
     serviceTerminate(error) {
-        this.ports.output['send'].push({
-            command: 'error',
-            threadId: worker_threads_1.threadId,
-            error: vrack2_core_1.CoreError.objectify(error)
-        });
-        this.exit();
-    }
-    exit() {
-        return __awaiter(this, void 0, void 0, function* () {
-            process.exit();
-        });
+        return this.shutdown(error);
     }
     getNextCaptureIndex() {
         return this.captureIndex++;
+    }
+    /**
+     * Normalize a service's `bootstrap` entries.
+     *
+     * `mergeBootList` (vrack2-core) requires every boot entry to carry an
+     * `options` object, so a bare `{ "path": "..." }` — the natural way for a
+     * service to override our default `DeviceMetrics` — would throw
+     * BTSP_BAD_BOOTLIST. Fill `options: {}` where it is missing.
+     */
+    normalizeServiceBootstrap(service) {
+        if (!service || typeof service !== 'object' || !service.bootstrap)
+            return service;
+        for (const id in service.bootstrap) {
+            const entry = service.bootstrap[id];
+            if (entry && typeof entry === 'object' && entry.options == null) {
+                entry.options = {};
+            }
+        }
+        return service;
     }
 }
 exports.default = Serivce;

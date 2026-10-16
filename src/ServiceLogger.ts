@@ -1,55 +1,78 @@
-import { Container, Device, Port, Rule, ErrorManager } from "vrack2-core";
+import {
+    Container,
+    Device,
+    Port,
+    Rule,
+    ErrorManager,
+    ServiceLogger as CoreServiceLogger,
+    PortLogger as CorePortLogger,
+} from "vrack2-core";
 
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 
-import { Journal } from 'vrack2-journal-db'
-import type { Schema } from 'vrack2-journal-db'
-
-import { join } from 'path'
-import * as fs from 'fs'
+import { Interval } from 'vrack2-journal-db'
+import type { Row, ScanOptions } from 'vrack2-journal-db'
 
 import IGuardMessage from "./interfaces/IGuardMessage";
-import IServiceMeta from "./interfaces/IServiceMeta";
 
-ErrorManager.register('ServiceLogger', 'SERVICE_JOURNAL_DISABLED', 'Service journal is disabled. Add "journal": true to the service meta file (services/<id>.meta.json) and restart the service')
+ErrorManager.register('ServiceLogger', 'SERVICE_JOURNAL_DISABLED', 'Service journal is unavailable. Enable the core ServiceLogger/PortLogger boot classes (vrack2-core.DEFAULT_BOOTLIST) for this service and restart')
+ErrorManager.register('ServiceLogger', 'SLS_STATS_TOO_MANY_BUCKETS', 'Too many buckets for the requested period/interval — use a coarser interval (e.g. 1d instead of 1h) or a shorter period')
 
-/** Схема записей журнала в vrack2-journal-db */
-const JOURNAL_SCHEMA: Schema = {
-    ts: 'delta',        // время первой записи (неубывает при append'е)
-    l: 'delta',         // время последней записи компактированной строки
-    type: 'dictionary',
-    device: 'dictionary',
-    port: 'auto',       // null для событий без порта
-    n: 'rle',           // количество повторений (серии 1 — схлопываются)
-    value: 'raw',
+/**
+ * Единая «сырая» строка журнала, независимо от того, из какой таблицы она:
+ * device_log (boot-класс ServiceLogger) или port_log (boot-класс PortLogger).
+ */
+type RawRow = {
+    ts: number          // ms (Date.now())
+    type: string        // port | notify | alert | event | terminal | error | terminate
+    device: string
+    port: string | null // имя выходного порта (только для type=port)
+    value: any          // payload (event data / port data)
 }
 
-/** Строка журнала в базе данных */
-type JournalRow = {
-    ts: number
-    l: number
+/** Компактированная запись журнала (формат MCP-ответа) */
+type LogEntry = {
+    t: number           // время первой записи (сек)
+    l: number           // время последней записи (сек)
+    n: number           // количество повторений
     type: string
     device: string
-    port: string | null
-    n: number
+    port?: string
     value: any
 }
 
 /**
- * Device that captures the service journal of the started service container.
+ * Device-обёртка над core-boot-классами журнала.
  *
- * Gets the live `Container` (together with the service meta) via the `container`
- * input port before the container is started, so it can subscribe to device
- * events and outgoing port pushes while the devices are running up.
- * The journal is enabled by the service meta "journal": true flag.
+ * С этой итерации сам захват и хранение журнала вынесены в core:
+ *   - `vrack2-core.ServiceLogger` (таблица `device_log`) — события каналов устройств
+ *     (terminal/notify/event/alert/error/terminate, без render),
+ *   - `vrack2-core.PortLogger`  (таблица `port_log`)  — исходящие push'ы устройств.
+ * Оба boot-класса живут в контейнере сервиса (MainProcess.DEFAULT_BOOTLIST),
+ * владеют store vrack2-journal-db и сами пишут строки.
+ *
+ * Это устройство — только поверх интерфейса команд/чтения:
+ *   - serviceLog        — чтение обеих таблиц (device_log + port_log), фильтр,
+ *                         склейка повторяющихся (t/l/n) при чтении;
+ *   - serviceLogStats   — компактная статистика: счётчики записей по бакетам
+ *                         (interval) и типам за произвольный период;
+ *   - serviceLogSet     — live вкл/выкл обоих boot-классов (enable/disable);
+ *   - serviceLogClear   — truncate обеих таблиц;
+ *   - serviceLogCompact — compact (дедупликация) обеих таблиц.
+ *
+ * Контейнер сервиса приходит по входному порту `container` (его передаёт
+ * Service.ts в worker'е до run()); device достаёт из него boot-классы через
+ * `container.Bootstrap.getBootClass(...)`.
  */
 export default class ServiceLogger extends Device {
 
     description(): string {
-        return `Устройство ServiceLogger ведет журнал запущенного сервиса: подписывается на события устройств
-(notify/alert/event/terminal/error/terminate) и обертывает исходящие порты устройств контейнера.
-Журнал хранится персистентно в базе vrack2-journal-db (файлы <baseDir>/journals/<service>), включается в meta сервиса ("journal": true).`
+        return `Устройство ServiceLogger — поверх журнала запущенного сервиса, который ведут core-boot-классы
+vrack2-core.ServiceLogger (таблица device_log: события устройств) и vrack2-core.PortLogger (таблица port_log:
+исходящие push'ы устройств), хранящие данные в vrack2-journal-db (<path>/<service>).
+Команды: serviceLog (чтение обеих таблиц со склейкой t/l/n), serviceLogSet (live вкл/выкл),
+serviceLogClear (truncate), serviceLogCompact (компакция/дедупликация).`
     }
 
     inputs(): { [key: string]: BasicPort; } {
@@ -57,7 +80,7 @@ export default class ServiceLogger extends Device {
             container: Port.standard()
                 .requirement(Rule.object().fields({
                     container: Rule.any().description('Live Container of the started service'),
-                    meta: Rule.any().description('Service meta (IServiceMeta)'),
+                    meta: Rule.any().description('Service meta (IServiceMeta), informational'),
                 }))
                 .description('Conveyor for { container, meta } of the started service, delivered before container run')
         }
@@ -71,65 +94,31 @@ export default class ServiceLogger extends Device {
 
     checkOptions(): { [key: string]: BasicType; } {
         return {
-            'baseDir': Rule.string().default('.').description('Base dir of vrack2-journal-db relative to process cwd. Service journal files live at <baseDir>/journals/<serviceId>'),
-            'rowsPerSegment': Rule.number().integer().min(1).default(10000).description('Rows per segment file in vrack2-journal-db (bigger — fewer files; default 10000)'),
-            'mergeWindow': Rule.number().integer().min(0).default(5).description('Max gap (sec) to merge consecutive identical records into one (t/l/n)'),
-            'valueMax': Rule.number().integer().min(32).default(500).description('Max stored value length'),
+            'mergeWindow': Rule.number().integer().min(0).default(5).description('Max gap (sec) to merge consecutive identical records into one (t/l/n) at read time'),
+            'valueMax': Rule.number().integer().min(32).default(500).description('Max stored value length (truncated at read time)'),
         }
     }
 
     /**
-     * Service container (live object)
+     * Контейнер запущенного сервиса (live-объект)
      */
     ContainerRef: Container | null = null
 
     /**
-     * Service meta (IServiceMeta)
+     * core-boot-класс ServiceLogger (таблица device_log) — если присутствует в bootlist сервиса
      */
-    Meta: IServiceMeta | null = null
+    sl: CoreServiceLogger | null = null
 
     /**
-     * Журнал: включен ли (meta "journal": true)
+     * core-boot-класс PortLogger (таблица port_log) — если присутствует в bootlist сервиса
      */
-    logEnabled: boolean = false
-
-    /**
-     * Журнал: база данных vrack2-journal-db (открыта на сервис, если журнал включен)
-     */
-    journal: Journal | null = null
-
-    /**
-     * Журнал: последняя компактированная запись, еще не записанная в базу
-     * (склейка повторяющихся событий до mergeWindow; фиксируется при следующей записи или перед чтением)
-     */
-    pendingRow: JournalRow | null = null
-
-    /**
-     * Журнал: ключ последней записи (для склейки одинаковых значений)
-     */
-    pendingKey: string = ''
-
-    /**
-     * Журнал: порты, уже обёрнутые для захвата (защита от двойной обёртки)
-     */
-    logWrappedPorts: Set<any> = new Set()
-
-    /**
-     * Devices events list
-     */
-    eventsChannels: { [key: string]: string } = {
-        'device.error':  'error',
-        'device.notify': 'notify',
-        'device.alert':  'alert',
-        'device.terminal': 'terminal',
-        'device.event':  'event'
-    }
+    pl: CorePortLogger | null = null
 
     onStart(): void {
         this.ports.output['register.command'].push({
             command: 'serviceLog',
-            short: 'Service journal tail',
-            description: 'Get the last entries of the service journal stored in vrack2-journal-db at <baseDir>/journals/<serviceId> (enabled by service meta "journal": true, disabled by default). Records: outgoing port pushes and device events (notify/alert/event/terminal/error/terminate). Consecutive identical values are compacted into one record (t/l/n).',
+            short: 'Service journal read',
+            description: 'Read the service journal: device events (core ServiceLogger, device_log) + outgoing port pushes (core PortLogger, port_log) in vrack2-journal-db. Consecutive identical values are compacted into one record (t/l/n).',
             level: 3,
             owner: this.type,
             icon: 'log-list',
@@ -139,13 +128,13 @@ export default class ServiceLogger extends Device {
                 limit: Rule.number().integer().min(1).max(100000).default(20).description('Max entries to return (latest)'),
                 device: Rule.string().maxLength(120).default('').example('').description('Filter by device id (empty - no filter)'),
                 type: Rule.string().maxLength(20).default('').example('port').description('Filter by entry type: port|notify|alert|event|terminal|error|terminate (empty - no filter)'),
-                since: Rule.number().integer().default(0).example(0).description('Only entries with t >= this timestamp (sec, 0 - no filter)'),
+                since: Rule.any().default(0).example('now-1h').description('Only entries with t >= this timestamp. Absolute value in ms, or a relative spec like "now-1h"/"now-30m"/"now" (0 - no filter)'),
             },
             return: Rule.object().fields({
-                enabled: Rule.boolean().example(true).description('Journal enabled flag'),
+                enabled: Rule.boolean().example(true).description('Journal capture enabled flag'),
                 entries: Rule.array().content(Rule.object().fields({
-                    t: Rule.number().integer().example(1).description('First timestamp (sec)'),
-                    l: Rule.number().integer().example(1).description('Last timestamp (sec)'),
+                t: Rule.number().integer().example(1).description('First timestamp (ms)'),
+                l: Rule.number().integer().example(1).description('Last timestamp (ms)'),
                     n: Rule.number().integer().example(1).description('Count of compacted occurrences'),
                     type: Rule.string().example('port').description('Entry type: port|notify|alert|event|terminal|error|terminate'),
                     device: Rule.string().example('DeviceID').description('Device id'),
@@ -153,14 +142,14 @@ export default class ServiceLogger extends Device {
                     value: Rule.any().description('Value / message'),
                 })).description('Journal entries (chronological)'),
                 total: Rule.number().integer().example(100).description('Total stored entries'),
-                dropped: Rule.number().integer().example(0).description('Legacy field, always 0 (journal is stored persistently and has no capacity limit)'),
-            }).description('Journal tail result')
+                dropped: Rule.number().integer().example(0).description('Legacy field, always 0'),
+            }).description('Journal read result')
         })
 
         this.ports.output['register.command'].push({
             command: 'serviceLogClear',
             short: 'Service journal clear',
-            description: 'Clear the service journal data stored in vrack2-journal-db at <baseDir>/journals/<serviceId>. Works even when the journal is disabled in meta — removes data left from previous runs',
+            description: 'Clear the service journal (truncate the device_log and port_log tables in vrack2-journal-db). Removes data left from previous runs',
             level: 3,
             owner: this.type,
             icon: 'log-list',
@@ -168,13 +157,66 @@ export default class ServiceLogger extends Device {
             rules: {
                 service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
             },
-            return: Rule.object().description('Clear result')
+            return: Rule.object().fields({
+                cleared: Rule.boolean().example(true).description('Journal cleared'),
+                removedRows: Rule.number().integer().example(123).description('Rows removed from both tables'),
+            }).description('Clear result')
+        })
+
+        this.ports.output['register.command'].push({
+            command: 'serviceLogSet',
+            short: 'Service journal on/off',
+            description: 'Enable (enabled:true) or disable (enabled:false) the live service journal (core ServiceLogger + PortLogger) on a RUNNING service without restart.',
+            level: 3,
+            owner: this.type,
+            icon: 'log-list',
+            handler: this.apiServiceLogSet.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                enabled: Rule.boolean().required().example(true).description('true = start capturing, false = stop'),
+            },
+            return: Rule.object().fields({
+                enabled: Rule.boolean().description('Journal capture enabled after the call'),
+                total: Rule.number().integer().description('Total stored entries'),
+            })
+        })
+
+        this.ports.output['register.command'].push({
+            command: 'serviceLogStats',
+            short: 'Service journal stats',
+            description: 'Compact journal statistics: record counts per time bucket (interval) and per type over an arbitrary period (days/weeks/months). Computed against vrack2-journal-db in the service worker — returns dense buckets {t, n, byType} instead of raw entries, so hot periods and gaps are visible without pulling the log.',
+            level: 3,
+            owner: this.type,
+            icon: 'bar-chart',
+            handler: this.apiServiceLogStats.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                period: Rule.string().default('now-24h:now').example('now-30d:now').description('Period "start:end"; bounds accept ms numbers or "now-1h"-like specs'),
+                interval: Rule.string().default('1h').example('1d').description('Bucket size: "15m", "1h", "1d", "1w" or plain ms'),
+                types: Rule.array().content(Rule.string().maxLength(20)).default([]).example(['error']).description('Filter by entry type: port|notify|alert|event|terminal|error|terminate (empty - all)'),
+                devices: Rule.array().content(Rule.string().maxLength(120)).default([]).example(['Mixer1']).description('Filter by device id (empty - all)'),
+                maxBuckets: Rule.number().integer().min(2).max(20000).default(5000).description('Max buckets to return; use a coarser interval if the period is wider'),
+            },
+            return: Rule.object().fields({
+                period: Rule.object().fields({
+                    start: Rule.number().integer().example(1718000000000).description('Period start (ms)'),
+                    end: Rule.number().integer().example(1718100000000).description('Period end (ms)'),
+                }).description('Resolved period'),
+                interval: Rule.string().example('1d').description('Bucket size (as requested)'),
+                total: Rule.number().integer().example(4500).description('Total records in period (after filters)'),
+                totals: Rule.any().example({ error: 140, terminal: 3100 }).description('Totals by type'),
+                buckets: Rule.array().content(Rule.object().fields({
+                    t: Rule.number().integer().example(1718000000000).description('Bucket start (ms)'),
+                    n: Rule.number().integer().example(123).description('Record count in bucket'),
+                    byType: Rule.any().example({ terminal: 100, error: 5 }).description('Counts by type (non-zero only)'),
+                })).description('Dense buckets, chronological (empty buckets kept — journal gaps are visible)'),
+            }).description('Journal stats result')
         })
 
         this.ports.output['register.command'].push({
             command: 'serviceLogCompact',
             short: 'Service journal compact',
-            description: 'Repack the service journal in vrack2-journal-db at <baseDir>/journals/<serviceId>: merge all closed segment files into one (reduces file count)',
+            description: 'Compact (deduplicate) the service journal tables (device_log + port_log) in vrack2-journal-db',
             level: 3,
             owner: this.type,
             icon: 'log-list',
@@ -192,283 +234,240 @@ export default class ServiceLogger extends Device {
     }
 
     /**
-     * Вход: контейнер запущенного сервиса + мета
-     * Подписки выполняются до run() контейнера, поэтому журнал
-     * фиксирует события запуска устройств
-     *
-     * @param data { container, meta }
+     * Вход: контейнер запущенного сервиса (+ мета). Достаём из контейнера
+     * core-boot-классы ServiceLogger / PortLogger (через container.Bootstrap).
      */
-    inputContainer(data: { container: Container, meta: IServiceMeta }) {
+    inputContainer(data: { container: Container, meta?: any }) {
         this.ContainerRef = data.container
-        this.Meta = data.meta
-        this.closeJournal()
-        this.pendingRow = null
-        this.logWrappedPorts = new Set()
-        this.bindLogCapture()
-    }
-
-    /**
-     * Stop-хук: Container.stopDevice()/stopAll() вызывает onStop(), а затем AWAIT этого метода.
-     * Дописывает накопленную запись и закрывает базу журнала (синхронные операции),
-     * поэтому данные гарантированно на диске до выхода воркера из памяти.
-     */
-    async onStopAsync(): Promise<void> {
-        this.closeJournal()
-    }
-
-    /**
-     * Запись накопленной (еще не зафиксированной) записи в базу и закрытие журнала
-     */
-    protected closeJournal() {
-        if (!this.journal) return
-        try {
-            if (this.pendingRow) {
-                this.journal.append(this.pendingRow)
-                this.pendingRow = null
-            }
-            this.journal.close()
-        } catch (err) {
-            console.error(`[ServiceLogger] failed to flush/close journal: ${(err as Error).message}`)
-        } finally {
-            this.journal = null
+        this.sl = null
+        this.pl = null
+        const bs = this.ContainerRef?.Bootstrap
+        if (bs) {
+            try { this.sl = bs.getBootClass('ServiceLogger', CoreServiceLogger) as CoreServiceLogger } catch { this.sl = null }
+            try { this.pl = bs.getBootClass('PortLogger', CorePortLogger) as CorePortLogger } catch { this.pl = null }
         }
     }
 
     /**
-     * Привязка захвата журнала (только если meta "journal": true, по умолчанию выключен)
-     *
-     * 1) Открытие журнала сервиса в базе vrack2-journal-db (<baseDir>/journals/<serviceId>)
-     * 2) Подписка на события устройств (error/notify/alert/terminal/event/terminate)
-     * 3) Обертка push() всех OUTPUT-портов устройств сервиса —
-     *    каждая исходящая запись фиксируется в журнале (входящие порты не логируются)
-     *
-     * @see logAppend
-     * @see apiServiceLog
+     * Общее: хотя бы один boot-класс журнала доступен
      */
-    protected async bindLogCapture() {
-        if (!this.ContainerRef) return
-        this.logEnabled = this.Meta?.journal === true
-        if (!this.logEnabled) return
-
-        // База данных журнала: <baseDir>/journals/<serviceId> (файлы переживают перезапуск)
-        const serviceId = String((this.ContainerRef as any).id || this.Meta?.name || 'service')
-        try {
-            const rpsRaw = Number(this.options.rowsPerSegment)
-            const rowsPerSegment = (Number.isInteger(rpsRaw) && rpsRaw >= 1) ? rpsRaw : 10000
-            // lock:'off' — не создавать/проверять .lock файлы: сервисы vrack2 живут в worker_threads,
-            // PID-блокировка при живом процессе выглядит «занятой» навсегда; владелец журнала уникален (контейнер сервиса)
-            this.journal = new Journal(join(process.cwd(), String(this.options.baseDir)), { rowsPerSegment, lock: 'off' })
-            this.journal.open(serviceId, JOURNAL_SCHEMA, { owner: 'vrack2.ServiceLogger' })
-        } catch (err) {
-            this.logEnabled = false
-            console.error(`[ServiceLogger] failed to open journal db for service "${serviceId}": ${(err as Error).message}`)
-            return
-        }
-
-        // События устройств
-        for (const channel in this.eventsChannels) {
-            const type = channel.replace('device.', '')
-            this.ContainerRef.on(channel, (data: { device: string; data: any; trace: any; }) => {
-                this.logAppend({ type, device: data.device, value: data.data })
-            })
-        }
-        this.ContainerRef.on('device.terminate', (data: { device: string; data: any; trace: any; }) => {
-            this.logAppend({ type: 'terminate', device: data.device, value: data.data })
-        })
-
-        // Исходящие порты: обертываем push после инициализации устройства
-        // (порты уже существуют и связаны, иначе записи не дошли бы до коннектов)
-        const wrap = () => {
-            for (const id in (this.ContainerRef as Container).devices) {
-                const dev = (this.ContainerRef as Container).devices[id]
-                for (const pname in dev.ports.output) {
-                    const port = dev.ports.output[pname]
-                    if (port === undefined || typeof port.push !== 'function') continue
-                    if (this.logWrappedPorts.has(port)) continue
-                    const orig = port.push.bind(port)
-                    port.push = (data: any) => {
-                        this.logAppend({ type: 'port', device: id, port: pname, value: data })
-                        return orig(data)
-                    }
-                    this.logWrappedPorts.add(port)
-                }
-            }
-        }
-        if (Object.keys((this.ContainerRef as Container).devices).length > 0) wrap()
-        else (this.ContainerRef as Container).once('afterInit', wrap)
+    protected hasJournal(): boolean {
+        return !!(this.sl || this.pl)
     }
 
     /**
-     * Добавление записи в журнал (база vrack2-journal-db, append-only + WAL)
-     *
-     * Последовательные одинаковые значения (одинаковые type/device/port/value,
-     * разрыв <= mergeWindow сек) склеиваются в одну запись: n++ и l = время последней.
-     * Пока идет склейка, запись держится в pendingRow; она фиксируется в базе
-     * при следующей отличной записи или перед чтением (apiServiceLog/clear).
-     *
-     * @param {Object} e Запись журнала
-     * @param {string} e.type Тип записи (port/notify/alert/event/terminal/error/terminate)
-     * @param {string} e.device ID устройства
-     * @param {string} [e.port] Название выходного порта (для type=port)
-     * @param {any} e.value Значение / сообщение
+     * Всего записей в обеих таблицах (0, если таблицы ещё не созданы)
      */
-    protected logAppend(e: { type: string; device: string; port?: string; value: any; }) {
-        if (!this.journal || !this.logEnabled) return
+    protected totalRows(): number {
+        let n = 0
+        if (this.sl?.table) n += this.sl.table.allRows().length
+        if (this.pl?.table) n += this.pl.table.allRows().length
+        return n
+    }
 
-        // Ограничение размера значения
-        let value = e.value
-        if (value !== null && typeof value === 'object') {
+    /**
+     * Ограничение размера значения (обрезка при чтении)
+     */
+    protected truncValue(value: any): any {
+        if (value === undefined || value === null) return value
+        const max = Number(this.options.valueMax) || 500
+        if (typeof value === 'string') return value.length > max ? value.slice(0, max) + '…' : value
+        if (typeof value === 'object') {
             try {
                 const s = JSON.stringify(value)
-                if (s.length > this.options.valueMax) value = s.slice(0, this.options.valueMax) + '…'
+                return s.length > max ? s.slice(0, max) + '…' : value
             } catch {
-                value = String(value).slice(0, this.options.valueMax)
+                return String(value).slice(0, max)
             }
-        } else if (typeof value === 'string' && value.length > this.options.valueMax) {
-            value = value.slice(0, this.options.valueMax) + '…'
         }
+        return value
+    }
 
-        const key = [e.type, e.device, e.port === undefined ? '' : e.port, JSON.stringify(value === undefined ? null : value)].join('|')
-        const now = Math.floor(Date.now() / 1000)
-
-        // Склейка с предыдущей записью (пока она не зафиксирована в базе)
-        if (this.pendingRow && this.pendingKey === key && now - this.pendingRow.l <= this.options.mergeWindow) {
-            this.pendingRow.l = now
-            this.pendingRow.n++
-            return
-        }
-
-        // Предыдущая запись зафиксирована, новая — в буфер склейки
-        if (this.pendingRow) this.journal.append(this.pendingRow)
-        this.pendingKey = key
-        this.pendingRow = { ts: now, l: now, type: e.type, device: e.device, port: e.port === undefined ? null : e.port, n: 1, value: value === undefined ? null : value }
+    protected sameValue(a: any, b: any): boolean {
+        try { return JSON.stringify(a) === JSON.stringify(b) } catch { return false }
     }
 
     /**
-     * Фиксация накопленной записи (pendingRow) в базе перед чтением
+     * Склейка последовательных одинаковых записей (одинаковые type/device/port/value,
+     * разрыв <= mergeWindow сек) в одну: t = первая, l = последняя, n = количество.
+     * Вход — по возрастанию ts; выход — компактные записи.
      */
-    protected flushPending() {
-        if (!this.journal || !this.pendingRow) return
-        try {
-            this.journal.append(this.pendingRow)
-        } catch (err) {
-            console.error(`[ServiceLogger] failed to append journal row: ${(err as Error).message}`)
+    protected compress(rows: RawRow[]): LogEntry[] {
+        // mergeWindow — в секундах (опция), сравниваем в мс
+        const mergeWindowMs = (Number(this.options.mergeWindow) || 0) * 1000
+        const out: LogEntry[] = []
+        for (const r of rows) {
+            const last = out[out.length - 1]
+            if (last
+                && last.type === r.type
+                && last.device === r.device
+                && (last.port ?? null) === (r.port ?? null)
+                && this.sameValue(last.value, r.value)
+                && (r.ts - last.l) <= mergeWindowMs) {
+                last.l = r.ts
+                last.n++
+            } else {
+                out.push({ t: r.ts, l: r.ts, n: 1, type: r.type, device: r.device, port: r.port === null ? undefined : r.port, value: this.truncValue(r.value) })
+            }
         }
-        this.pendingRow = null
+        return out
     }
 
     /**
-     * Получение хвоста журнала сервиса (база vrack2-journal-db, включается в meta: "journal": true)
-     *
-     * Записи берутся из базы свежайшими к старым (page desc), поэтому старые
-     * сегменты не читаются зря; фильтры применяются поверх выборки.
-     *
-     * @param {Object} data Данные запроса
-     * @param {string} data.service ID сервиса
-     * @param {number} [data.limit] Максимум записей (последние), по умолчанию 20
-     * @param {string} [data.device] Фильтр по ID устройства
-     * @param {string} [data.type] Фильтр по типу записи: port|notify|alert|event|terminal|error|terminate
-     * @param {number} [data.since] Только записи с t >= этого времени (сек)
+     * Собирает сырые строки из обеих core-таблиц (device_log + port_log).
+     * Чтение через allRows(): журналы сервиса умеренны по объёму (события + push'ы),
+     * а core-классы сами используют allRows() в tail()/count().
      */
-    async apiServiceLog(data: { service: string; limit?: number; device?: string; type?: string; since?: number; }, gData: IGuardMessage) {
-        if (!this.logEnabled || !this.journal) throw ErrorManager.make('SERVICE_JOURNAL_DISABLED')
+    protected collectRaw(since: number | string): RawRow[] {
+        const raw: RawRow[] = []
+        if (this.sl?.table) {
+            for (const r of this.sl.table.query(since, 'now') as Row[]) {
+                raw.push({ ts: Number(r.ts), type: String(r.event), device: String(r.device), port: null, value: r.data })
+            }
+        }
+        if (this.pl?.table) {
+            for (const r of this.pl.table.query(since, 'now') as Row[]) {
+                raw.push({ ts: Number(r.ts), type: 'port', device: String(r.device), port: (r.port === null || r.port === undefined) ? null : String(r.port), value: r.data })
+            }
+        }
+        return raw
+    }
 
-        // Фиксируем накопленную запись, чтобы она попала в выборку и total
-        this.flushPending()
-
+    /**
+     * Чтение журнала сервиса (обе таблицы: device_log + port_log),
+     * фильтр по device/type/since, склейка t/l/n, последние `limit`.
+     */
+    async apiServiceLog(data: { service: string; limit?: number; device?: string; type?: string; since?: any }, gData: IGuardMessage) {
         const limit = (data.limit === undefined || data.limit < 1) ? 20 : data.limit
-        const since = (data.since && data.since > 0) ? data.since : 0
+        const since = (data.since === undefined || data.since === null || data.since === '' || data.since === 0) ? 0 : data.since
 
-        // Выборка свежайших записей с фильтрами: идем чанками от новых к старым,
-        // пока не соберем `limit` совпадений или не дойдем до начала журнала.
-        // Записи идут в порядке убывания ts — ниже since совпадений уже не будет.
-        const matches: JournalRow[] = []
-        let offset = 0
-        let exhausted = false
-        const chunk = Math.max(100, limit * 5)
-        for (;;) {
-            const batch = this.journal.page(chunk, offset, 'desc') as JournalRow[]
-            if (batch.length === 0) break
-            for (const r of batch) {
-                if (since && (!r.ts || r.ts < since)) { exhausted = true; break }
-                if (data.device && r.device !== data.device) continue
-                if (data.type && r.type !== data.type) continue
-                matches.unshift(r)
-            }
-            offset += batch.length
-            if (exhausted || matches.length >= limit || batch.length < chunk) break
+        const total = this.totalRows()
+        const raw = this.collectRaw(since)
+
+        // Фильтр по устройству и типу (до склейки)
+        const filtered = raw.filter(r =>
+            (!data.device || r.device === data.device)
+            && (!data.type || r.type === data.type)
+        )
+
+        // По возрастанию, склейка повторяющихся (t/l в мс), последние `limit`
+        filtered.sort((a, b) => a.ts - b.ts)
+        const entries = this.compress(filtered).slice(-limit)
+
+        const enabled = !!(this.sl?.enabled || this.pl?.enabled)
+        return { enabled, entries, total, dropped: 0 }
+    }
+
+    /**
+     * Компактная статистика журнала: количество записей в периоде, разбитое
+     * по бакетам (interval) и по типам. Считается на стороне воркера поверх
+     * vrack2-journal-db (scan с проекцией ts+type), ответ компактный — подходит
+     * для длинных периодов (недели/месяцы) без тягания сырых записей.
+     */
+    async apiServiceLogStats(data: { service: string; period?: string; interval?: string; types?: string[]; devices?: string[]; maxBuckets?: number }, gData: IGuardMessage) {
+        if (!(this.sl?.table) && !(this.pl?.table)) throw ErrorManager.make('SERVICE_JOURNAL_DISABLED')
+
+        const period = data.period ?? 'now-24h:now'
+        const [start, end] = Interval.period(period)
+        const intervalStr = data.interval ?? '1h'
+        const intervalMs = Interval.parseInterval(intervalStr)
+        if (!Number.isFinite(intervalMs) || intervalMs <= 0) throw new RangeError('Bad interval: ' + intervalStr)
+
+        // Бакетная сетка (плотная, включая пустые — видны провалы журнала)
+        const firstBucket = Math.floor(start / intervalMs) * intervalMs
+        const lastBucket = Math.floor(end / intervalMs) * intervalMs
+        const nBuckets = Math.round((lastBucket - firstBucket) / intervalMs) + 1
+        const maxBuckets = Number(data.maxBuckets) || 5000
+        if (nBuckets > maxBuckets) throw ErrorManager.make('SLS_STATS_TOO_MANY_BUCKETS', { nBuckets, maxBuckets })
+
+        const wantedTypes = (data.types ?? []).map(t => String(t)).filter(Boolean)
+        const wantedDevices = (data.devices ?? []).map(d => String(d)).filter(Boolean)
+        const deviceWhere: NonNullable<ScanOptions['where']> = wantedDevices.length ? [{ field: 'device', op: 'in', value: wantedDevices }] : []
+
+        // bucketStart -> { type -> count }
+        const acc = new Map<number, Map<string, number>>()
+        const totals: Record<string, number> = {}
+        let total = 0
+        const add = (ts: number, type: string) => {
+            const b = Math.floor(ts / intervalMs) * intervalMs
+            let m = acc.get(b)
+            if (!m) { m = new Map(); acc.set(b, m) }
+            m.set(type, (m.get(type) ?? 0) + 1)
+            totals[type] = (totals[type] ?? 0) + 1
+            total++
+        }
+
+        // device_log (события каналов): тип = поле event
+        const eventTypes = wantedTypes.length ? wantedTypes.filter(t => t !== 'port') : null
+        if (this.sl?.table && (!eventTypes || eventTypes.length)) {
+            const where = [...deviceWhere]
+            if (eventTypes) where.push({ field: 'event', op: 'in', value: eventTypes })
+            const rows = this.sl.table.scan({ start, end, select: ['ts', 'event'], where })
+            for (const r of rows) add(Number(r.ts), String(r.event))
+        }
+        // port_log (исходящие push'ы): тип = 'port'
+        if (this.pl?.table && (!wantedTypes.length || wantedTypes.includes('port'))) {
+            const rows = this.pl.table.scan({ start, end, select: ['ts'], where: deviceWhere })
+            for (const r of rows) add(Number(r.ts), 'port')
+        }
+
+        const buckets: Array<{ t: number, n: number, byType: Record<string, number> }> = []
+        for (let b = firstBucket; b <= lastBucket; b += intervalMs) {
+            const m = acc.get(b)
+            const byType: Record<string, number> = {}
+            let n = 0
+            if (m) for (const [t, c] of m) { byType[t] = c; n += c }
+            buckets.push({ t: b, n, byType })
         }
 
         return {
-            enabled: true,
-            entries: matches.slice(-limit).map((e) => ({ t: e.ts, l: e.l, n: e.n, type: e.type, device: e.device, port: e.port === null ? undefined : e.port, value: e.value })),
-            total: this.journal!.stats().totalRows,
-            dropped: 0,
+            period: { start, end },
+            interval: intervalStr,
+            total,
+            totals,
+            buckets,
         }
     }
 
     /**
-     * Очистка журнала сервиса (база vrack2-journal-db)
-     *
-     * @param {Object} data Данные запроса
-     * @param {string} data.service ID сервиса
+     * Live-вкл/выкл журнала на УЖЕ РАБОТАЮЩЕМ сервисе (оба boot-класса сразу).
+     */
+    async apiServiceLogSet(data: { service: string; enabled: boolean }, gData: IGuardMessage) {
+        if (!this.hasJournal()) throw ErrorManager.make('SERVICE_JOURNAL_DISABLED')
+        if (data.enabled === true) {
+            this.sl?.enable()
+            this.pl?.enable()
+        } else {
+            this.sl?.disable()
+            this.pl?.disable()
+        }
+        return { enabled: !!(this.sl?.enabled || this.pl?.enabled), total: this.totalRows() }
+    }
+
+    /**
+     * Очистка журнала (truncate обеих таблиц).
      */
     async apiServiceLogClear(data: { service: string }, gData: IGuardMessage) {
-        if (!this.logEnabled || !this.journal) {
-            // Журнал выключен в meta, но данные от предыдущих запусков могли остаться на диске — удаляем их тоже
-            const serviceId = String((this.ContainerRef as any).id || this.Meta?.name || 'service')
-            return this.clearDiskJournal(serviceId)
-        }
-        this.flushPending()
-        try {
-            this.journal.clear()
-        } catch (err) {
-            console.error(`[ServiceLogger] failed to clear journal: ${(err as Error).message}`)
-            throw err
-        }
-        return { cleared: true }
+        let removedRows = 0
+        if (this.sl?.table) removedRows += this.sl.truncate().removedRows
+        if (this.pl?.table) removedRows += this.pl.truncate().removedRows
+        return { cleared: true, removedRows }
     }
 
     /**
-     * Очистка данных журнала на диске, когда журнал выключен в meta.
-     * Базу открываем только если директория уже существует (не создаем пустой журнал для сервиса без данных)
-     */
-    protected clearDiskJournal(serviceId: string): { cleared: boolean } {
-        const baseDir = join(process.cwd(), String(this.options.baseDir))
-        if (!fs.existsSync(join(baseDir, 'journals', serviceId))) return { cleared: false }
-
-        let journal: Journal | null = null
-        try {
-            const rpsRaw = Number(this.options.rowsPerSegment)
-            const rowsPerSegment = (Number.isInteger(rpsRaw) && rpsRaw >= 1) ? rpsRaw : 10000
-            journal = new Journal(baseDir, { rowsPerSegment, lock: 'off' })
-            journal.open(serviceId, JOURNAL_SCHEMA, { owner: 'vrack2.ServiceLogger.clear' })
-            journal.clear()
-            return { cleared: true }
-        } catch (err) {
-            console.error(`[ServiceLogger] failed to clear on-disk journal for service "${serviceId}": ${(err as Error).message}`)
-            throw err
-        } finally {
-            try { if (journal) journal.close() } catch { /* уже закрыта или не открылась */ }
-        }
-    }
-
-    /**
-     * Компакция журнала сервиса (база vrack2-journal-db):
-     * склейка закрытых сегментов в один файл (уменьшает количество файлов на диске)
-     *
-     * @param {Object} data Данные запроса
-     * @param {string} data.service ID сервиса
+     * Компакция (дедупликация) обеих таблиц.
      */
     async apiServiceLogCompact(data: { service: string }, gData: IGuardMessage) {
-        if (!this.logEnabled || !this.journal) throw ErrorManager.make('SERVICE_JOURNAL_DISABLED')
-        this.flushPending()
-        try {
-            const r = this.journal.compact()
-            return { mergedSegments: r.mergedSegments, logicalRows: r.logicalRows, physicalBefore: r.physicalBefore, physicalAfter: r.physicalAfter }
-        } catch (err) {
-            console.error(`[ServiceLogger] failed to compact journal: ${(err as Error).message}`)
-            throw err
+        if (!(this.sl?.table) && !(this.pl?.table)) throw ErrorManager.make('SERVICE_JOURNAL_DISABLED')
+        const agg = { mergedSegments: 0, logicalRows: 0, physicalBefore: 0, physicalAfter: 0 }
+        const merge = (r: { mergedSegments: number; logicalRows: number; physicalBefore: number; physicalAfter: number }) => {
+            agg.mergedSegments += r.mergedSegments
+            agg.logicalRows += r.logicalRows
+            agg.physicalBefore += r.physicalBefore
+            agg.physicalAfter += r.physicalAfter
         }
+        if (this.sl?.table) merge(this.sl.table.compact())
+        if (this.pl?.table) merge(this.pl.table.compact())
+        return agg
     }
 }

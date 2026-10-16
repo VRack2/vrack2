@@ -192,8 +192,7 @@ module.exports = a
     "description" : "Небольшое описание сервиса",
     "autoStart": false,
     "autoReload": false,
-    "isolated": false,
-    "journal": false
+    "isolated": false
 }
 ```
 
@@ -205,13 +204,14 @@ module.exports = a
  * **autoStart** *boolean* - Если `true` сервис будет запущен после старта VRack
  * **autoReload** *boolean* - Если `true` сервис будет перезапущен, если он завершит свою работу в связи с ошибкой
  * **isolated** *boolean* - Если `true` сервис будет запщуен в отдельном процессе для изоляции кода, см [Работа с LL интерфейсами: I²C, Serial...](./LLHardware.md)
- * **journal** *boolean* - Если `true` для сервиса включается in-memory журнал: исходящие порт-пуши и события устройств (`notify`/`alert`/`event`/`terminal`/`error`/`terminate`). Держатся последние 1000 записей, одинаковые последовательные значения в пределах 5 секунд компактируются в одну запись (`n` — количество повторений). Чтение — команда `serviceLog` / MCP-инструмент `service_log`, очистка — `serviceLogClear` / `service_log_clear`
+
+Журнал событий сервиса (исходящие порт-пуши + события устройств `notify`/`alert`/`event`/`terminal`/`error`/`terminate`) включён **по умолчанию** — его ведут core-boot-классы `ServiceLogger`/`PortLogger` (vrack2-journal-db). Флаг `journal` в мета-файле больше не нужен и игнорируется. Чтение — команда `serviceLog` / MCP-инструмент `service_log` (`limit` — количество последних записей, по умолчанию 20), live-вкл/выкл — `serviceLogSet` / `service_log_set`, очистка — `serviceLogClear` / `service_log_clear`, склейка сегментных файлов на диске — `serviceLogCompact`.
 
 ## Переопределение конфигурации сервис-файла
 
 Иногда есть необходимость оставлять оригинальный сервис-файл но при этом изменить часть его настроек. Для этого  необходимо создать рядом файл с именем `my-service.conf.json`. Этот файл должен содержать структуру как у обычного файла сервиса, но с устройствами, для которых требует изменение настроек. 
 
-Например есть файл сервиса `my-service.conf.json`:
+Например есть файл сервиса `my-service.json`:
 
 ```json
 {

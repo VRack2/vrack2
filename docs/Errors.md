@@ -141,7 +141,7 @@ const alternative = CoreError.objectify(error);
 ```js
 // Создаем CoreError и импортируем объект ошибки в него
 const restoredError = new CoreError(
-  'name', 'message', 'code', 'short'
+  'name', 'message', 'short'
 ).import(serialized);
 ```
 

@@ -41,7 +41,7 @@ mkdir -p ./devices ./storage ./structure ./services
 cd ./devices
 git clone https://github.com/VRack2/vrack2.git
 ```
-Теперь надо установить зависимости для свервиса VRack2 (она всего одна - ws):
+Теперь надо установить зависимости для сервиса VRack2 (`ws` — WebSocket-сервер и `vrack2-journal-db` — персистентный журнал):
 
 ```bash
 cd ./vrack2
@@ -58,8 +58,8 @@ npm run start
 Итоговая структура директорий должна выглядеть так:
 
 ```
-/opt/vrack2/
-  devices/        # Директория вендоров и устройсв
+/opt/vrack2-service/
+  devices/        # Директория вендоров и устройств
     vrack2/       # Компоненты (устройства) сервиса vrack2
   run/            # Директория файла запуска сервиса VRack2-Service
   node_modules/   # Директория зависимостей после установки через npm install

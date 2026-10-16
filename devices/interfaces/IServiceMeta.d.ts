@@ -18,6 +18,4 @@ export default interface IServiceMeta {
     isolated: boolean;
     /**  Список подписок на внутренние каналы */
     parentChannels?: Array<string>;
-    /** Включить ин-мемори журнал сервиса (исходящие порты + события устройств), по умолчанию выключен */
-    journal?: boolean;
 }

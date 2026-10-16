@@ -1,26 +1,50 @@
-import { Container, Device } from "vrack2-core";
+import { Container, Device, ServiceLogger as CoreServiceLogger, PortLogger as CorePortLogger } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
-import { Journal } from 'vrack2-journal-db';
 import IGuardMessage from "./interfaces/IGuardMessage";
-import IServiceMeta from "./interfaces/IServiceMeta";
-/** Строка журнала в базе данных */
-type JournalRow = {
+/**
+ * Единая «сырая» строка журнала, независимо от того, из какой таблицы она:
+ * device_log (boot-класс ServiceLogger) или port_log (boot-класс PortLogger).
+ */
+type RawRow = {
     ts: number;
-    l: number;
     type: string;
     device: string;
     port: string | null;
+    value: any;
+};
+/** Компактированная запись журнала (формат MCP-ответа) */
+type LogEntry = {
+    t: number;
+    l: number;
     n: number;
+    type: string;
+    device: string;
+    port?: string;
     value: any;
 };
 /**
- * Device that captures the service journal of the started service container.
+ * Device-обёртка над core-boot-классами журнала.
  *
- * Gets the live `Container` (together with the service meta) via the `container`
- * input port before the container is started, so it can subscribe to device
- * events and outgoing port pushes while the devices are running up.
- * The journal is enabled by the service meta "journal": true flag.
+ * С этой итерации сам захват и хранение журнала вынесены в core:
+ *   - `vrack2-core.ServiceLogger` (таблица `device_log`) — события каналов устройств
+ *     (terminal/notify/event/alert/error/terminate, без render),
+ *   - `vrack2-core.PortLogger`  (таблица `port_log`)  — исходящие push'ы устройств.
+ * Оба boot-класса живут в контейнере сервиса (MainProcess.DEFAULT_BOOTLIST),
+ * владеют store vrack2-journal-db и сами пишут строки.
+ *
+ * Это устройство — только поверх интерфейса команд/чтения:
+ *   - serviceLog        — чтение обеих таблиц (device_log + port_log), фильтр,
+ *                         склейка повторяющихся (t/l/n) при чтении;
+ *   - serviceLogStats   — компактная статистика: счётчики записей по бакетам
+ *                         (interval) и типам за произвольный период;
+ *   - serviceLogSet     — live вкл/выкл обоих boot-классов (enable/disable);
+ *   - serviceLogClear   — truncate обеих таблиц;
+ *   - serviceLogCompact — compact (дедупликация) обеих таблиц.
+ *
+ * Контейнер сервиса приходит по входному порту `container` (его передаёт
+ * Service.ts в worker'е до run()); device достаёт из него boot-классы через
+ * `container.Bootstrap.getBootClass(...)`.
  */
 export default class ServiceLogger extends Device {
     description(): string;
@@ -34,155 +58,115 @@ export default class ServiceLogger extends Device {
         [key: string]: BasicType;
     };
     /**
-     * Service container (live object)
+     * Контейнер запущенного сервиса (live-объект)
      */
     ContainerRef: Container | null;
     /**
-     * Service meta (IServiceMeta)
+     * core-boot-класс ServiceLogger (таблица device_log) — если присутствует в bootlist сервиса
      */
-    Meta: IServiceMeta | null;
+    sl: CoreServiceLogger | null;
     /**
-     * Журнал: включен ли (meta "journal": true)
+     * core-boot-класс PortLogger (таблица port_log) — если присутствует в bootlist сервиса
      */
-    logEnabled: boolean;
-    /**
-     * Журнал: база данных vrack2-journal-db (открыта на сервис, если журнал включен)
-     */
-    journal: Journal | null;
-    /**
-     * Журнал: последняя компактированная запись, еще не записанная в базу
-     * (склейка повторяющихся событий до mergeWindow; фиксируется при следующей записи или перед чтением)
-     */
-    pendingRow: JournalRow | null;
-    /**
-     * Журнал: ключ последней записи (для склейки одинаковых значений)
-     */
-    pendingKey: string;
-    /**
-     * Журнал: порты, уже обёрнутые для захвата (защита от двойной обёртки)
-     */
-    logWrappedPorts: Set<any>;
-    /**
-     * Devices events list
-     */
-    eventsChannels: {
-        [key: string]: string;
-    };
+    pl: CorePortLogger | null;
     onStart(): void;
     /**
-     * Вход: контейнер запущенного сервиса + мета
-     * Подписки выполняются до run() контейнера, поэтому журнал
-     * фиксирует события запуска устройств
-     *
-     * @param data { container, meta }
+     * Вход: контейнер запущенного сервиса (+ мета). Достаём из контейнера
+     * core-boot-классы ServiceLogger / PortLogger (через container.Bootstrap).
      */
     inputContainer(data: {
         container: Container;
-        meta: IServiceMeta;
+        meta?: any;
     }): void;
     /**
-     * Stop-хук: Container.stopDevice()/stopAll() вызывает onStop(), а затем AWAIT этого метода.
-     * Дописывает накопленную запись и закрывает базу журнала (синхронные операции),
-     * поэтому данные гарантированно на диске до выхода воркера из памяти.
+     * Общее: хотя бы один boot-класс журнала доступен
      */
-    onStopAsync(): Promise<void>;
+    protected hasJournal(): boolean;
     /**
-     * Запись накопленной (еще не зафиксированной) записи в базу и закрытие журнала
+     * Всего записей в обеих таблицах (0, если таблицы ещё не созданы)
      */
-    protected closeJournal(): void;
+    protected totalRows(): number;
     /**
-     * Привязка захвата журнала (только если meta "journal": true, по умолчанию выключен)
-     *
-     * 1) Открытие журнала сервиса в базе vrack2-journal-db (<baseDir>/journals/<serviceId>)
-     * 2) Подписка на события устройств (error/notify/alert/terminal/event/terminate)
-     * 3) Обертка push() всех OUTPUT-портов устройств сервиса —
-     *    каждая исходящая запись фиксируется в журнале (входящие порты не логируются)
-     *
-     * @see logAppend
-     * @see apiServiceLog
+     * Ограничение размера значения (обрезка при чтении)
      */
-    protected bindLogCapture(): Promise<void>;
+    protected truncValue(value: any): any;
+    protected sameValue(a: any, b: any): boolean;
     /**
-     * Добавление записи в журнал (база vrack2-journal-db, append-only + WAL)
-     *
-     * Последовательные одинаковые значения (одинаковые type/device/port/value,
-     * разрыв <= mergeWindow сек) склеиваются в одну запись: n++ и l = время последней.
-     * Пока идет склейка, запись держится в pendingRow; она фиксируется в базе
-     * при следующей отличной записи или перед чтением (apiServiceLog/clear).
-     *
-     * @param {Object} e Запись журнала
-     * @param {string} e.type Тип записи (port/notify/alert/event/terminal/error/terminate)
-     * @param {string} e.device ID устройства
-     * @param {string} [e.port] Название выходного порта (для type=port)
-     * @param {any} e.value Значение / сообщение
+     * Склейка последовательных одинаковых записей (одинаковые type/device/port/value,
+     * разрыв <= mergeWindow сек) в одну: t = первая, l = последняя, n = количество.
+     * Вход — по возрастанию ts; выход — компактные записи.
      */
-    protected logAppend(e: {
-        type: string;
-        device: string;
-        port?: string;
-        value: any;
-    }): void;
+    protected compress(rows: RawRow[]): LogEntry[];
     /**
-     * Фиксация накопленной записи (pendingRow) в базе перед чтением
+     * Собирает сырые строки из обеих core-таблиц (device_log + port_log).
+     * Чтение через allRows(): журналы сервиса умеренны по объёму (события + push'ы),
+     * а core-классы сами используют allRows() в tail()/count().
      */
-    protected flushPending(): void;
+    protected collectRaw(since: number | string): RawRow[];
     /**
-     * Получение хвоста журнала сервиса (база vrack2-journal-db, включается в meta: "journal": true)
-     *
-     * Записи берутся из базы свежайшими к старым (page desc), поэтому старые
-     * сегменты не читаются зря; фильтры применяются поверх выборки.
-     *
-     * @param {Object} data Данные запроса
-     * @param {string} data.service ID сервиса
-     * @param {number} [data.limit] Максимум записей (последние), по умолчанию 20
-     * @param {string} [data.device] Фильтр по ID устройства
-     * @param {string} [data.type] Фильтр по типу записи: port|notify|alert|event|terminal|error|terminate
-     * @param {number} [data.since] Только записи с t >= этого времени (сек)
+     * Чтение журнала сервиса (обе таблицы: device_log + port_log),
+     * фильтр по device/type/since, склейка t/l/n, последние `limit`.
      */
     apiServiceLog(data: {
         service: string;
         limit?: number;
         device?: string;
         type?: string;
-        since?: number;
+        since?: any;
     }, gData: IGuardMessage): Promise<{
         enabled: boolean;
-        entries: {
-            t: number;
-            l: number;
-            n: number;
-            type: string;
-            device: string;
-            port: string | undefined;
-            value: any;
-        }[];
+        entries: LogEntry[];
         total: number;
         dropped: number;
     }>;
     /**
-     * Очистка журнала сервиса (база vrack2-journal-db)
-     *
-     * @param {Object} data Данные запроса
-     * @param {string} data.service ID сервиса
+     * Компактная статистика журнала: количество записей в периоде, разбитое
+     * по бакетам (interval) и по типам. Считается на стороне воркера поверх
+     * vrack2-journal-db (scan с проекцией ts+type), ответ компактный — подходит
+     * для длинных периодов (недели/месяцы) без тягания сырых записей.
+     */
+    apiServiceLogStats(data: {
+        service: string;
+        period?: string;
+        interval?: string;
+        types?: string[];
+        devices?: string[];
+        maxBuckets?: number;
+    }, gData: IGuardMessage): Promise<{
+        period: {
+            start: number;
+            end: number;
+        };
+        interval: string;
+        total: number;
+        totals: Record<string, number>;
+        buckets: {
+            t: number;
+            n: number;
+            byType: Record<string, number>;
+        }[];
+    }>;
+    /**
+     * Live-вкл/выкл журнала на УЖЕ РАБОТАЮЩЕМ сервисе (оба boot-класса сразу).
+     */
+    apiServiceLogSet(data: {
+        service: string;
+        enabled: boolean;
+    }, gData: IGuardMessage): Promise<{
+        enabled: boolean;
+        total: number;
+    }>;
+    /**
+     * Очистка журнала (truncate обеих таблиц).
      */
     apiServiceLogClear(data: {
         service: string;
     }, gData: IGuardMessage): Promise<{
         cleared: boolean;
+        removedRows: number;
     }>;
     /**
-     * Очистка данных журнала на диске, когда журнал выключен в meta.
-     * Базу открываем только если директория уже существует (не создаем пустой журнал для сервиса без данных)
-     */
-    protected clearDiskJournal(serviceId: string): {
-        cleared: boolean;
-    };
-    /**
-     * Компакция журнала сервиса (база vrack2-journal-db):
-     * склейка закрытых сегментов в один файл (уменьшает количество файлов на диске)
-     *
-     * @param {Object} data Данные запроса
-     * @param {string} data.service ID сервиса
+     * Компакция (дедупликация) обеих таблиц.
      */
     apiServiceLogCompact(data: {
         service: string;

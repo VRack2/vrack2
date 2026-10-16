@@ -27,7 +27,17 @@ export default class Serivce extends Device {
     eventsChannels: {
         [key: string]: string;
     };
+    /**
+     * Main process instance of the started service (kept for graceful stop:
+     * MainProcess.stop() stops the container and destroys boot classes,
+     * which flushes the journal stores to disk)
+     */
     MainProcess?: MainProcess;
+    /**
+     * Guard: shutdown() may be triggered concurrently (device.terminate +
+     * uncaughtException); the first call wins, the rest are no-ops
+     */
+    shuttingDown: boolean;
     /**
      * Service container
     */
@@ -40,6 +50,14 @@ export default class Serivce extends Device {
      * Service meta (getting from service manager)
     */
     ServiceMeta: IServiceMeta;
+    /***
+     * Render pull for service shares data
+     */
+    renderPull: Set<string>;
+    /**
+     * Render timer
+     */
+    renderTimer: boolean | NodeJS.Timeout;
     /**
      * Индекс для захвата порта устройства
      */
@@ -196,10 +214,18 @@ export default class Serivce extends Device {
     protected bindContainerDeviceEvents(): Promise<void>;
     /**
      * Bind render device event
-      *
-     * Broadcast the device render payload directly to subscribers
+     *
+     * Update render pull
+     *
+     * @see renderPull
      */
     protected bindRenderEvent(): Promise<void>;
+    /**
+     * Send broadcast for device render event
+     *
+     * @see bindRenderEvent
+     */
+    protected serviceRender(): void;
     /**
      * Convert object to string using util.inspect
     */
@@ -217,20 +243,40 @@ export default class Serivce extends Device {
     protected broadcast(channel: string, data: any): void;
     /**
      * Graceful stop of the running service container and worker self-exit.
-     *
-     * 1) `Container.stopAll()` — graceful shutdown of user devices (their `onStop()` / `await onStopAsync()` hooks).
-     * 2) Our own container `stopAll()` — ServiceLogger's `onStopAsync()` flushes the journal to disk;
-     *    Container.stopDevice awaits each device's onStopAsync(), so the write completes before exit.
-     * 3) The worker exits on its own: this thread was spawned for the service, and nobody else will terminate it.
-     *    On the main side the pending request is rejected with WM_WORKER_EXIT by the exit handler — a normal outcome.
+     * Все завершающие процедуры — в единственной точке shutdown() (см. там).
+     * Main сбросил conf.autoReload перед командой, поэтому exit не вызовет автоперезапуск.
      */
     apiServiceStop(data: {
         service: string;
     }, gData: IGuardMessage): Promise<void>;
     /**
-     * Send termiate errro and terminate service process
+     * Единственная точка завершения воркера сервиса.
+     * Все пути (команда stop, device.terminate, uncaughtException, ошибки start/check)
+     * сходятся сюда, чтобы завершающие процедуры отрабатывали одинаково:
+     * 1) Если есть ошибка — уведомляем main ДО graceful-стопа, пока каналы живы:
+     *    висящий onStopAsync не оставит main в неведении.
+     * 2) Graceful stop: MainProcess.stop() — onStop()/onStopAsync() устройств +
+     *    Bootstrap.destroyAll() — onDestroy() boot-классов (ServiceLogger/PortLogger):
+     *    закрытие journal store и дописывание активных сегментов на диск.
+     *    (fallback: ServiceContainer.stopAll(), если MainProcess не создан).
+     * 3) Остановка worker-контейнера (Service/Master/WorkerProvider).
+     * 4) process.exit(0) — main воспринимает выход воркера как нормальный исход (WM_WORKER_EXIT).
+     * Идемпотентен: повторные вызовы игнорируются (shuttingDown).
      */
-    protected serviceTerminate(error: Error): void;
-    protected exit(): Promise<void>;
+    protected shutdown(error?: Error): Promise<void>;
+    protected notifyMainError(error: Error): void;
+    /**
+     * Терминальная ошибка сервиса: уведомление + завершение через единственную точку shutdown()
+     */
+    protected serviceTerminate(error: Error): Promise<void>;
     protected getNextCaptureIndex(): number;
+    /**
+     * Normalize a service's `bootstrap` entries.
+     *
+     * `mergeBootList` (vrack2-core) requires every boot entry to carry an
+     * `options` object, so a bare `{ "path": "..." }` — the natural way for a
+     * service to override our default `DeviceMetrics` — would throw
+     * BTSP_BAD_BOOTLIST. Fill `options: {}` where it is missing.
+     */
+    protected normalizeServiceBootstrap(service: any): any;
 }
