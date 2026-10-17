@@ -30,13 +30,8 @@ class Serivce extends vrack2_core_1.Device {
             'device.event': 'event'
         };
         /**
-         * Guard: shutdown() may be triggered concurrently (device.terminate +
-         * uncaughtException); the first call wins, the rest are no-ops
-         */
-        this.shuttingDown = false;
-        /**
          * Service container
-        */
+         */
         this.ServiceContainer = new vrack2_core_1.Container('', {});
         /**
          * Service info (getting from service manager)
@@ -64,6 +59,10 @@ class Serivce extends vrack2_core_1.Device {
          * Render timer
          */
         this.renderTimer = false;
+        /**
+         * Memory metrics timer (setInterval from onStart)
+         */
+        this.memTimer = null;
         /**
          * Индекс для захвата порта устройства
          */
@@ -251,7 +250,7 @@ class Serivce extends vrack2_core_1.Device {
                 service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
                 device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
                 port: vrack2_core_1.Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
-                timeout: vrack2_core_1.Rule.number().integer().min(0).max(20000).description('Timeout output listener')
+                timeout: vrack2_core_1.Rule.number().integer().min(0).max(20000).default(5000).description('Timeout output listener, ms')
             },
             return: vrack2_core_1.Rule.string().example('any').description('Return a captured data')
         });
@@ -345,7 +344,7 @@ class Serivce extends vrack2_core_1.Device {
             return: vrack2_core_1.Rule.string()
         });
         /* SEND METRICS */
-        setInterval(() => {
+        this.memTimer = setInterval(() => {
             const mem = process.memoryUsage();
             this.metric('memory.rss', Math.round(mem.rss / 1024 / 1024));
             this.metric('memory.heaptotal', Math.round(mem.heapTotal / 1024 / 1024));
@@ -357,6 +356,10 @@ class Serivce extends vrack2_core_1.Device {
             this.Container.emit('system.error', error);
             this.ServiceContainer.emit('system.error', error);
         });
+    }
+    onStop() {
+        if (this.memTimer)
+            clearInterval(this.memTimer);
     }
     /**                 API SERVICE METHODS                 **/
     /**
@@ -390,16 +393,9 @@ class Serivce extends vrack2_core_1.Device {
     apiServiceCheck(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             try {
-                const service = this.normalizeServiceBootstrap(vrack2_core_1.ImportManager.importJSON(data.info.filePath));
-                const MainProcessClass = yield vrack2_core_1.ImportManager.importClass(this.options.mainProcessPath);
-                const MainProcessEx = new MainProcessClass({ id: data.info.id, service });
-                MainProcessEx.Container.parent = this.Container;
-                this.MainProcess = MainProcessEx;
-                this.ServiceContainer = MainProcessEx.Container;
-                this.Serviceinfo = data.info;
-                this.ServiceMeta = data.meta;
-                yield this.bindTerminate();
-                yield this.bindRenderEvent();
+                const MainProcessEx = yield this.createMainProcess(data.info, data.meta, false);
+                this.bindTerminate();
+                this.bindRenderEvent();
                 // Ожидаем завершения проверки: иначе асинхронная ошибка check()
                 // сработает после отправки ответа "success", и сломанная конфигурация
                 // будет ошибочно принята за валидную.
@@ -423,15 +419,7 @@ class Serivce extends vrack2_core_1.Device {
     */
     apiServiceStartSafe(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            const service = this.normalizeServiceBootstrap(yield vrack2_core_1.ImportManager.importJSON(data.info.filePath));
-            const MainProcessClass = yield vrack2_core_1.ImportManager.importClass(this.options.mainProcessPath);
-            const MainProcessEx = new MainProcessClass({ id: data.info.id, service, confFile: data.info.configPath });
-            MainProcessEx.Container.parent = this.Container;
-            this.MainProcess = MainProcessEx;
-            this.ServiceContainer = MainProcessEx.Container;
-            this.ServiceContainer.meta = data.meta;
-            this.Serviceinfo = data.info;
-            this.ServiceMeta = data.meta;
+            const MainProcessEx = yield this.createMainProcess(data.info, data.meta, true);
             // Сначала «собрать» контейнер: загрузить boot-классы и устройства.
             // ServiceLogger.getBootClass требует, чтобы Bootstrap.loaded уже был заполнен
             // (loadBootList живёт в check()), иначе журнал сервисов молча теряется.
@@ -440,10 +428,10 @@ class Serivce extends vrack2_core_1.Device {
             // Пробрасываем контейнер и мета до runStart(),
             // чтобы внешнее устройство (ServiceLogger) успело подписаться на события запуска
             this.ports.output['container'].push({ container: this.ServiceContainer, meta: data.meta });
-            yield this.bindRenderEvent();
-            yield this.bindTerminate();
+            this.bindRenderEvent();
+            this.bindTerminate();
             MainProcessEx.run();
-            yield this.bindContainerDeviceEvents();
+            this.bindContainerDeviceEvents();
         });
     }
     /**
@@ -499,8 +487,6 @@ class Serivce extends vrack2_core_1.Device {
      */
     apiDeviceStop(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!this.ServiceContainer.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF', { device: data.device });
             yield this.ServiceContainer.stopDevice(data.device);
             return { device: data.device, started: this.ServiceContainer.isStarted(data.device) };
         });
@@ -514,8 +500,6 @@ class Serivce extends vrack2_core_1.Device {
      */
     apiDeviceProcess(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!this.ServiceContainer.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF', { device: data.device });
             yield this.ServiceContainer.startDevice(data.device);
             return { device: data.device, started: this.ServiceContainer.isStarted(data.device) };
         });
@@ -530,8 +514,6 @@ class Serivce extends vrack2_core_1.Device {
      */
     apiDeviceStatus(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!this.ServiceContainer.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF', { device: data.device });
             const status = this.ServiceContainer.getDeviceStatus(data.device);
             if (!status)
                 throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF', { device: data.device });
@@ -595,27 +577,28 @@ class Serivce extends vrack2_core_1.Device {
         });
     }
     /**
-     * Getting device metric
-    */
-    apiServiceDeviceMetric(data, gData) {
-        return __awaiter(this, void 0, void 0, function* () {
-            if (!this.ServiceContainer.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF');
-            // const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', VrackDbMetrics) as VrackDbMetrics
-            const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.JournalDbMetrics);
-            return DM.read(data.device, data.metric, data.period, data.precision);
-        });
+     * Read device metric from a container
+     */
+    readDeviceMetric(container, data) {
+        if (!container.devices[data.device])
+            throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF');
+        const DM = container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.JournalDbMetrics);
+        return DM.read(data.device, data.metric, data.period, data.precision);
     }
     /**
      * Getting device metric
-     * Obtaining system metrics. Those that were initialized at the VRack2 level
+     */
+    apiServiceDeviceMetric(data, gData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return this.readDeviceMetric(this.ServiceContainer, data);
+        });
+    }
+    /**
+     * Getting service metric (worker container, VRack2 level)
      */
     apiServiceMetric(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!this.Container.devices[data.device])
-                throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF');
-            const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.JournalDbMetrics);
-            return DM.read(data.device, data.metric, data.period, data.precision);
+            return this.readDeviceMetric(this.Container, data);
         });
     }
     /**
@@ -630,17 +613,35 @@ class Serivce extends vrack2_core_1.Device {
     }
     /*                      Helpers                    */
     /**
-     * Bind container device terminate event
-    */
-    bindTerminate() {
+     * Create the service MainProcess and attach it to the worker
+     * (parent container, MainProcess/ServiceContainer/Serviceinfo/ServiceMeta fields).
+     * @param start true — full start (confFile + container.meta), false — check only
+     */
+    createMainProcess(info, meta, start) {
         return __awaiter(this, void 0, void 0, function* () {
-            this.ServiceContainer.on('device.terminate', (data) => {
-                if (data.trace instanceof vrack2_core_1.CoreError)
-                    return this.serviceTerminate(data.trace);
-                const CE = vrack2_core_1.ErrorManager.make('SERVICE_CONTAINER_TERMINATE', { device: data.device });
-                CE.add(data.trace);
-                return this.serviceTerminate(CE);
-            });
+            const service = this.normalizeServiceBootstrap(vrack2_core_1.ImportManager.importJSON(info.filePath));
+            const MainProcessClass = yield vrack2_core_1.ImportManager.importClass(this.options.mainProcessPath);
+            const MainProcessEx = new MainProcessClass(Object.assign({ id: info.id, service }, (start ? { confFile: info.configPath } : {})));
+            MainProcessEx.Container.parent = this.Container;
+            this.MainProcess = MainProcessEx;
+            this.ServiceContainer = MainProcessEx.Container;
+            this.Serviceinfo = info;
+            this.ServiceMeta = meta;
+            if (start)
+                this.ServiceContainer.meta = meta;
+            return MainProcessEx;
+        });
+    }
+    /**
+     * Bind container device terminate event
+     */
+    bindTerminate() {
+        this.ServiceContainer.on('device.terminate', (data) => {
+            if (data.trace instanceof vrack2_core_1.CoreError)
+                return this.serviceTerminate(data.trace);
+            const CE = vrack2_core_1.ErrorManager.make('SERVICE_CONTAINER_TERMINATE', { device: data.device });
+            CE.add(data.trace);
+            return this.serviceTerminate(CE);
         });
     }
     /**
@@ -651,13 +652,11 @@ class Serivce extends vrack2_core_1.Device {
      * @see eventsChannels device events list
     */
     bindContainerDeviceEvents() {
-        return __awaiter(this, void 0, void 0, function* () {
-            for (const channel in this.eventsChannels) {
-                this.ServiceContainer.on(channel, (data, args) => {
-                    this.broadcast(this.makeBroadcastChannel(data.device, this.eventsChannels[channel]), { message: data.data, trace: this.makeBroadcastTrace(data.trace), args });
-                });
-            }
-        });
+        for (const channel in this.eventsChannels) {
+            this.ServiceContainer.on(channel, (data, args) => {
+                this.broadcast(this.makeBroadcastChannel(data.device, this.eventsChannels[channel]), { message: data.data, trace: this.makeBroadcastTrace(data.trace), args });
+            });
+        }
     }
     /**
      * Bind render device event
@@ -667,12 +666,10 @@ class Serivce extends vrack2_core_1.Device {
      * @see renderPull
      */
     bindRenderEvent() {
-        return __awaiter(this, void 0, void 0, function* () {
-            this.ServiceContainer.on('device.render', (data) => {
-                this.renderPull.add(data.device);
-                if (!this.renderTimer)
-                    this.serviceRender();
-            });
+        this.ServiceContainer.on('device.render', (data) => {
+            this.renderPull.add(data.device);
+            if (!this.renderTimer)
+                this.serviceRender();
         });
     }
     /**
@@ -712,8 +709,6 @@ class Serivce extends vrack2_core_1.Device {
                 if (trace instanceof Error)
                     return vrack2_core_1.CoreError.objectify(trace);
         }
-        // if (typeof trace === 'string') return { trace }
-        // return util.inspect(trace, { showHidden: false, depth: null, compact: false })
         return trace;
     }
     /**
@@ -731,16 +726,6 @@ class Serivce extends vrack2_core_1.Device {
     broadcast(channel, data) {
         this.ports.output['broadcast'].push({ channel, data });
     }
-    // /**
-    //  * Send data to ServiceManager after service loaded
-    // */
-    // protected loaded() {
-    //     this.ports.output['send'].push({
-    //         __index: workerData.__index,
-    //         __id: workerData.__id,
-    //         resultData: workerData.__id
-    //     })
-    // }
     /**
      * Graceful stop of the running service container and worker self-exit.
      * Все завершающие процедуры — в единственной точке shutdown() (см. там).
@@ -748,59 +733,34 @@ class Serivce extends vrack2_core_1.Device {
      */
     apiServiceStop(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (!this.ServiceContainer)
-                throw vrack2_core_1.ErrorManager.make('SERVICE_CONTAINER_ERROR');
             return this.shutdown();
         });
     }
     /**
-     * Единственная точка завершения воркера сервиса.
-     * Все пути (команда stop, device.terminate, uncaughtException, ошибки start/check)
-     * сходятся сюда, чтобы завершающие процедуры отрабатывали одинаково:
-     * 1) Если есть ошибка — уведомляем main ДО graceful-стопа, пока каналы живы:
-     *    висящий onStopAsync не оставит main в неведении.
-     * 2) Graceful stop: MainProcess.stop() — onStop()/onStopAsync() устройств +
-     *    Bootstrap.destroyAll() — onDestroy() boot-классов (ServiceLogger/PortLogger):
-     *    закрытие journal store и дописывание активных сегментов на диск.
-     *    (fallback: ServiceContainer.stopAll(), если MainProcess не создан).
-     * 3) Остановка worker-контейнера (Service/Master/WorkerProvider).
-     * 4) process.exit(0) — main воспринимает выход воркера как нормальный исход (WM_WORKER_EXIT).
-     * Идемпотентен: повторные вызовы игнорируются (shuttingDown).
+     * Завершение воркера сервиса: уведомить main об ошибке (если есть),
+     * остановить сервис (MainProcess.stop() — устройства + boot-классы),
+     * остановить воркер-контейнер, process.exit(0).
+     * Сюда сходятся все пути: команда stop, device.terminate,
+     * uncaughtException, ошибки start/check.
      */
     shutdown(error) {
         return __awaiter(this, void 0, void 0, function* () {
-            if (this.shuttingDown)
-                return;
-            this.shuttingDown = true;
             if (error) {
                 this.notifyMainError(error);
             }
-            let stopErr = null;
             if (this.MainProcess) {
                 try {
                     yield this.MainProcess.stop();
                 }
                 catch (e) {
-                    stopErr = e;
-                }
-            }
-            else if (this.ServiceContainer) {
-                try {
-                    yield this.ServiceContainer.stopAll();
-                }
-                catch (e) {
-                    stopErr = e;
+                    this.notifyMainError(e);
                 }
             }
             try {
                 yield this.Container.stopAll();
             }
             catch (e) {
-                console.error(`[Service] failed to stop worker container: ${e.message}`);
-            }
-            // Ошибка graceful-стопа (путь apiServiceStop): уведомляем main после стопа
-            if (stopErr && !error) {
-                this.notifyMainError(stopErr);
+                console.error(`[Service] failed to stop worker container:`, e);
             }
             process.exit(0);
         });
@@ -814,7 +774,7 @@ class Serivce extends vrack2_core_1.Device {
             });
         }
         catch (e) {
-            console.error(`[Service] failed to notify main: ${e.message}`);
+            console.error('Service failed to notify main', error);
         }
     }
     /**

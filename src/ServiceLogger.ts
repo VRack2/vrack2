@@ -56,10 +56,10 @@ type LogEntry = {
  *   - serviceLog        — чтение обеих таблиц (device_log + port_log), фильтр,
  *                         склейка повторяющихся (t/l/n) при чтении;
  *   - serviceLogStats   — компактная статистика: счётчики записей по бакетам
- *                         (interval) и типам за произвольный период;
+ *                         (interval) и типам за произвольный период + топ
+ *                         отправителей (device+port по убыванию количества);
  *   - serviceLogSet     — live вкл/выкл обоих boot-классов (enable/disable);
- *   - serviceLogClear   — truncate обеих таблиц;
- *   - serviceLogCompact — compact (дедупликация) обеих таблиц.
+ *   - serviceLogClear   — truncate обеих таблиц.
  *
  * Контейнер сервиса приходит по входному порту `container` (его передаёт
  * Service.ts в worker'е до run()); device достаёт из него boot-классы через
@@ -72,7 +72,7 @@ export default class ServiceLogger extends Device {
 vrack2-core.ServiceLogger (таблица device_log: события устройств) и vrack2-core.PortLogger (таблица port_log:
 исходящие push'ы устройств), хранящие данные в vrack2-journal-db (<path>/<service>).
 Команды: serviceLog (чтение обеих таблиц со склейкой t/l/n), serviceLogSet (live вкл/выкл),
-serviceLogClear (truncate), serviceLogCompact (компакция/дедупликация).`
+serviceLogClear (truncate).`
     }
 
     inputs(): { [key: string]: BasicPort; } {
@@ -184,7 +184,7 @@ serviceLogClear (truncate), serviceLogCompact (компакция/дедупли
         this.ports.output['register.command'].push({
             command: 'serviceLogStats',
             short: 'Service journal stats',
-            description: 'Compact journal statistics: record counts per time bucket (interval) and per type over an arbitrary period (days/weeks/months). Computed against vrack2-journal-db in the service worker — returns dense buckets {t, n, byType} instead of raw entries, so hot periods and gaps are visible without pulling the log.',
+            description: 'Compact journal statistics over an arbitrary period (days/weeks/months): `buckets` table [t, n, byType] — dense record counts per time bucket (gaps visible), `senders` table [device, port, count] — who sent to which port (sorted by count desc). Both as {header, rows} tables, computed against vrack2-journal-db in the service worker — no raw entries pulled.',
             level: 3,
             owner: this.type,
             icon: 'bar-chart',
@@ -205,32 +205,17 @@ serviceLogClear (truncate), serviceLogCompact (компакция/дедупли
                 interval: Rule.string().example('1d').description('Bucket size (as requested)'),
                 total: Rule.number().integer().example(4500).description('Total records in period (after filters)'),
                 totals: Rule.any().example({ error: 140, terminal: 3100 }).description('Totals by type'),
-                buckets: Rule.array().content(Rule.object().fields({
-                    t: Rule.number().integer().example(1718000000000).description('Bucket start (ms)'),
-                    n: Rule.number().integer().example(123).description('Record count in bucket'),
-                    byType: Rule.any().example({ terminal: 100, error: 5 }).description('Counts by type (non-zero only)'),
-                })).description('Dense buckets, chronological (empty buckets kept — journal gaps are visible)'),
+                buckets: Rule.object().fields({
+                    header: Rule.array().content(Rule.string()).example(['t', 'n', 'byType']).description('Column names: t — bucket start (ms); n — record count; byType — counts by type'),
+                    rows: Rule.array().content(Rule.array()).example([[1718000000000, 123, { terminal: 100, error: 5 }]]).description('Rows [t, n, byType] (byType — map type->count, non-zero only)'),
+                }).description('Dense buckets table, chronological (empty buckets kept — journal gaps are visible)'),
+                senders: Rule.object().fields({
+                    header: Rule.array().content(Rule.string()).example(['device', 'port', 'count']).description('Column names: device — sender; port — output port (null for device_log events); count — records in period'),
+                    rows: Rule.array().content(Rule.array()).example([['HttpServer', 'request', 51], ['Master', null, 15]]).description('Rows [device, port, count], sorted by count desc (max 200 rows)'),
+                }).description('Top senders table per device+port'),
             }).description('Journal stats result')
         })
 
-        this.ports.output['register.command'].push({
-            command: 'serviceLogCompact',
-            short: 'Service journal compact',
-            description: 'Compact (deduplicate) the service journal tables (device_log + port_log) in vrack2-journal-db',
-            level: 3,
-            owner: this.type,
-            icon: 'log-list',
-            handler: this.apiServiceLogCompact.bind(this),
-            rules: {
-                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-            },
-            return: Rule.object().fields({
-                mergedSegments: Rule.number().integer().example(5).description('Closed segments merged into one'),
-                logicalRows: Rule.number().integer().example(100).description('Logical rows preserved'),
-                physicalBefore: Rule.number().integer().example(200).description('Physical rows before compaction (incl. duplicates)'),
-                physicalAfter: Rule.number().integer().example(100).description('Physical rows after compaction'),
-            }).description('Compact result')
-        })
     }
 
     /**
@@ -397,35 +382,58 @@ serviceLogClear (truncate), serviceLogCompact (компакция/дедупли
             total++
         }
 
+        // device+port -> count (топ отправителей)
+        const senderAcc = new Map<string, number>()
+        const senderKey = (device: string, port: string | null) => device + '\u0000' + (port === null ? '__null__' : port)
+        const addSender = (device: string, port: string | null) => {
+            const k = senderKey(device, port)
+            senderAcc.set(k, (senderAcc.get(k) ?? 0) + 1)
+        }
+
         // device_log (события каналов): тип = поле event
         const eventTypes = wantedTypes.length ? wantedTypes.filter(t => t !== 'port') : null
         if (this.sl?.table && (!eventTypes || eventTypes.length)) {
             const where = [...deviceWhere]
             if (eventTypes) where.push({ field: 'event', op: 'in', value: eventTypes })
-            const rows = this.sl.table.scan({ start, end, select: ['ts', 'event'], where })
-            for (const r of rows) add(Number(r.ts), String(r.event))
+            const rows = this.sl.table.scan({ start, end, select: ['ts', 'event', 'device'], where })
+            for (const r of rows) { add(Number(r.ts), String(r.event)); addSender(String(r.device), null) }
         }
         // port_log (исходящие push'ы): тип = 'port'
         if (this.pl?.table && (!wantedTypes.length || wantedTypes.includes('port'))) {
-            const rows = this.pl.table.scan({ start, end, select: ['ts'], where: deviceWhere })
-            for (const r of rows) add(Number(r.ts), 'port')
+            const rows = this.pl.table.scan({ start, end, select: ['ts', 'device', 'port'], where: deviceWhere })
+            for (const r of rows) {
+                add(Number(r.ts), 'port')
+                addSender(String(r.device), r.port === null || r.port === undefined ? null : String(r.port))
+            }
         }
 
-        const buckets: Array<{ t: number, n: number, byType: Record<string, number> }> = []
+        // Таблица бакетов: [t, n, byType], плотная (пустые бакеты сохранены — видны провалы)
+        const bucketRows: Array<[number, number, Record<string, number>]> = []
         for (let b = firstBucket; b <= lastBucket; b += intervalMs) {
             const m = acc.get(b)
             const byType: Record<string, number> = {}
             let n = 0
             if (m) for (const [t, c] of m) { byType[t] = c; n += c }
-            buckets.push({ t: b, n, byType })
+            bucketRows.push([b, n, byType])
         }
+
+        // Таблица отправителей: [device, port, count], по убыванию count (макс 200)
+        const senderRows: Array<[string, string | null, number]> = []
+        for (const [k, count] of senderAcc) {
+            const i = k.indexOf('\u0000')
+            const portRaw = k.slice(i + 1)
+            senderRows.push([k.slice(0, i), portRaw === '__null__' ? null : portRaw, count])
+        }
+        senderRows.sort((a, b) => b[2] - a[2])
+        if (senderRows.length > 200) senderRows.length = 200
 
         return {
             period: { start, end },
             interval: intervalStr,
             total,
             totals,
-            buckets,
+            buckets: { header: ['t', 'n', 'byType'], rows: bucketRows },
+            senders: { header: ['device', 'port', 'count'], rows: senderRows },
         }
     }
 
@@ -452,22 +460,5 @@ serviceLogClear (truncate), serviceLogCompact (компакция/дедупли
         if (this.sl?.table) removedRows += this.sl.truncate().removedRows
         if (this.pl?.table) removedRows += this.pl.truncate().removedRows
         return { cleared: true, removedRows }
-    }
-
-    /**
-     * Компакция (дедупликация) обеих таблиц.
-     */
-    async apiServiceLogCompact(data: { service: string }, gData: IGuardMessage) {
-        if (!(this.sl?.table) && !(this.pl?.table)) throw ErrorManager.make('SERVICE_JOURNAL_DISABLED')
-        const agg = { mergedSegments: 0, logicalRows: 0, physicalBefore: 0, physicalAfter: 0 }
-        const merge = (r: { mergedSegments: number; logicalRows: number; physicalBefore: number; physicalAfter: number }) => {
-            agg.mergedSegments += r.mergedSegments
-            agg.logicalRows += r.logicalRows
-            agg.physicalBefore += r.physicalBefore
-            agg.physicalAfter += r.physicalAfter
-        }
-        if (this.sl?.table) merge(this.sl.table.compact())
-        if (this.pl?.table) merge(this.pl.table.compact())
-        return agg
     }
 }

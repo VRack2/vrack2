@@ -205,7 +205,7 @@ module.exports = a
  * **autoReload** *boolean* - Если `true` сервис будет перезапущен, если он завершит свою работу в связи с ошибкой
  * **isolated** *boolean* - Если `true` сервис будет запщуен в отдельном процессе для изоляции кода, см [Работа с LL интерфейсами: I²C, Serial...](./LLHardware.md)
 
-Журнал событий сервиса (исходящие порт-пуши + события устройств `notify`/`alert`/`event`/`terminal`/`error`/`terminate`) включён **по умолчанию** — его ведут core-boot-классы `ServiceLogger`/`PortLogger` (vrack2-journal-db). Флаг `journal` в мета-файле больше не нужен и игнорируется. Чтение — команда `serviceLog` / MCP-инструмент `service_log` (`limit` — количество последних записей, по умолчанию 20), live-вкл/выкл — `serviceLogSet` / `service_log_set`, очистка — `serviceLogClear` / `service_log_clear`, склейка сегментных файлов на диске — `serviceLogCompact`.
+Журнал событий сервиса (исходящие порт-пуши + события устройств `notify`/`alert`/`event`/`terminal`/`error`/`terminate`) включён **по умолчанию** — его ведут core-boot-классы `ServiceLogger`/`PortLogger` (vrack2-journal-db). Чтение — команда `serviceLog` / MCP-инструмент `service_log` (`limit` — количество последних записей, по умолчанию 20), live-вкл/выкл — `serviceLogSet` / `service_log_set`, очистка — `serviceLogClear` / `service_log_clear`, склейка сегментных файлов на диске — `serviceLogCompact`.
 
 ## Переопределение конфигурации сервис-файла
 

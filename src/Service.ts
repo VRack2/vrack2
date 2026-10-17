@@ -1,4 +1,4 @@
-import { Bootstrap, Container, CoreError, Device, ErrorManager, ImportManager, MainProcess, Port, Rule, Metric, BasicMetric, JournalDbMetrics, VrackDbMetrics } from "vrack2-core";
+import { Bootstrap, Container, CoreError, Device, ErrorManager, ImportManager, MainProcess, Port, Rule, Metric, BasicMetric, JournalDbMetrics } from "vrack2-core";
 
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
@@ -9,7 +9,6 @@ import { threadId } from "worker_threads"
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from './interfaces/IServiceConfig';
 import IServiceMeta from "./interfaces/IServiceMeta";
-import IServiceStructure from "vrack2-core/lib/IServiceStructure";
 import IDeviceActionRequest from "./interfaces/IDeviceActionRequest";
 
 import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
@@ -85,14 +84,8 @@ export default class Serivce extends Device {
     MainProcess?: MainProcess;
 
     /**
-     * Guard: shutdown() may be triggered concurrently (device.terminate +
-     * uncaughtException); the first call wins, the rest are no-ops
-     */
-    shuttingDown: boolean = false;
-
-    /**
      * Service container
-    */
+     */
     ServiceContainer: Container = new Container('', {} as Bootstrap);
 
     /**
@@ -125,6 +118,11 @@ export default class Serivce extends Device {
      * Render timer
      */
     renderTimer: boolean | NodeJS.Timeout = false;
+
+    /**
+     * Memory metrics timer (setInterval from onStart)
+     */
+    memTimer: NodeJS.Timeout | null = null
 
     /**
      * Индекс для захвата порта устройства
@@ -292,7 +290,7 @@ export default class Serivce extends Device {
                 service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
                 device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
                 port: Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
-                timeout: Rule.number().integer().min(0).max(20000).description('Timeout output listener')
+                timeout: Rule.number().integer().min(0).max(20000).default(5000).description('Timeout output listener, ms')
             },
             return: Rule.string().example('any').description('Return a captured data')
         })
@@ -397,7 +395,7 @@ export default class Serivce extends Device {
         })
 
         /* SEND METRICS */
-        setInterval(() => {
+        this.memTimer = setInterval(() => {
             const mem = process.memoryUsage()
             this.metric('memory.rss', Math.round(mem.rss / 1024 / 1024))
             this.metric('memory.heaptotal', Math.round(mem.heapTotal / 1024 / 1024))
@@ -410,6 +408,10 @@ export default class Serivce extends Device {
             this.Container.emit('system.error', error)
             this.ServiceContainer.emit('system.error', error)
         })
+    }
+
+    onStop(): void {
+        if (this.memTimer) clearInterval(this.memTimer)
     }
 
     /**                 API SERVICE METHODS                 **/
@@ -441,16 +443,9 @@ export default class Serivce extends Device {
     */
     async apiServiceCheck(data: { info: IServiceConfig, meta: IServiceMeta }, gData: IGuardMessage) {
         try {
-            const service = this.normalizeServiceBootstrap(ImportManager.importJSON(data.info.filePath))
-            const MainProcessClass = await ImportManager.importClass(this.options.mainProcessPath) as typeof MainProcess
-            const MainProcessEx = new MainProcessClass({ id: data.info.id, service })
-            MainProcessEx.Container.parent = this.Container
-            this.MainProcess = MainProcessEx
-            this.ServiceContainer = MainProcessEx.Container
-            this.Serviceinfo = data.info
-            this.ServiceMeta = data.meta
-            await this.bindTerminate()
-            await this.bindRenderEvent()
+            const MainProcessEx = await this.createMainProcess(data.info, data.meta, false)
+            this.bindTerminate()
+            this.bindRenderEvent()
             // Ожидаем завершения проверки: иначе асинхронная ошибка check()
             // сработает после отправки ответа "success", и сломанная конфигурация
             // будет ошибочно принята за валидную.
@@ -472,15 +467,7 @@ export default class Serivce extends Device {
      * @param {IServiceMeta} data.meta ServiceManager internal serivce meta
     */
     async apiServiceStartSafe(data: { info: IServiceConfig, meta: IServiceMeta }, gData: IGuardMessage) {
-        const service = this.normalizeServiceBootstrap(await ImportManager.importJSON(data.info.filePath))
-        const MainProcessClass = await ImportManager.importClass(this.options.mainProcessPath) as typeof MainProcess
-        const MainProcessEx = new MainProcessClass({ id: data.info.id, service, confFile: data.info.configPath })
-        MainProcessEx.Container.parent = this.Container
-        this.MainProcess = MainProcessEx
-        this.ServiceContainer = MainProcessEx.Container
-        this.ServiceContainer.meta = data.meta
-        this.Serviceinfo = data.info
-        this.ServiceMeta = data.meta
+        const MainProcessEx = await this.createMainProcess(data.info, data.meta, true)
         // Сначала «собрать» контейнер: загрузить boot-классы и устройства.
         // ServiceLogger.getBootClass требует, чтобы Bootstrap.loaded уже был заполнен
         // (loadBootList живёт в check()), иначе журнал сервисов молча теряется.
@@ -489,10 +476,10 @@ export default class Serivce extends Device {
         // Пробрасываем контейнер и мета до runStart(),
         // чтобы внешнее устройство (ServiceLogger) успело подписаться на события запуска
         this.ports.output['container'].push({ container: this.ServiceContainer, meta: data.meta })
-        await this.bindRenderEvent()
-        await this.bindTerminate()
+        this.bindRenderEvent()
+        this.bindTerminate()
         MainProcessEx.run()
-        await this.bindContainerDeviceEvents()
+        this.bindContainerDeviceEvents()
     }
 
     /**
@@ -540,7 +527,6 @@ export default class Serivce extends Device {
      * is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
      */
     async apiDeviceStop(data: { service: string, device: string }, gData: IGuardMessage) {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF', { device: data.device })
         await this.ServiceContainer.stopDevice(data.device)
         return { device: data.device, started: this.ServiceContainer.isStarted(data.device) }
     }
@@ -553,7 +539,6 @@ export default class Serivce extends Device {
      * started device is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
      */
     async apiDeviceProcess(data: { service: string, device: string }, gData: IGuardMessage) {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF', { device: data.device })
         await this.ServiceContainer.startDevice(data.device)
         return { device: data.device, started: this.ServiceContainer.isStarted(data.device) }
     }
@@ -567,7 +552,6 @@ export default class Serivce extends Device {
      * device id is unknown.
      */
     async apiDeviceStatus(data: { service: string, device: string }, gData: IGuardMessage) {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF', { device: data.device })
         const status = this.ServiceContainer.getDeviceStatus(data.device)
         if (!status) throw ErrorManager.make('CONT_DEVICE_NF', { device: data.device })
         return { device: data.device, started: status.state === 'started', status }
@@ -632,25 +616,26 @@ export default class Serivce extends Device {
     }
 
     /**
-     * Getting device metric
-    */
-    async apiServiceDeviceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF')
-        // const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', VrackDbMetrics) as VrackDbMetrics
-        const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', JournalDbMetrics) as JournalDbMetrics
+     * Read device metric from a container
+     */
+    protected readDeviceMetric(container: Container, data: IDeviceMetricRequest) {
+        if (!container.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF')
+        const DM = container.Bootstrap.getBootClass('DeviceMetrics', JournalDbMetrics) as JournalDbMetrics
         return DM.read(data.device, data.metric, data.period, data.precision)
     }
 
-
-
     /**
      * Getting device metric
-     * Obtaining system metrics. Those that were initialized at the VRack2 level
+     */
+    async apiServiceDeviceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
+        return this.readDeviceMetric(this.ServiceContainer, data)
+    }
+
+    /**
+     * Getting service metric (worker container, VRack2 level)
      */
     async apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-        if (!this.Container.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF')
-        const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', JournalDbMetrics) as JournalDbMetrics
-        return DM.read(data.device, data.metric, data.period, data.precision)
+        return this.readDeviceMetric(this.Container, data)
     }
 
 
@@ -666,9 +651,27 @@ export default class Serivce extends Device {
     /*                      Helpers                    */
 
     /**
+     * Create the service MainProcess and attach it to the worker
+     * (parent container, MainProcess/ServiceContainer/Serviceinfo/ServiceMeta fields).
+     * @param start true — full start (confFile + container.meta), false — check only
+     */
+    protected async createMainProcess(info: IServiceConfig, meta: IServiceMeta, start: boolean): Promise<MainProcess> {
+        const service = this.normalizeServiceBootstrap(ImportManager.importJSON(info.filePath))
+        const MainProcessClass = await ImportManager.importClass(this.options.mainProcessPath) as typeof MainProcess
+        const MainProcessEx = new MainProcessClass({ id: info.id, service, ...(start ? { confFile: info.configPath } : {}) })
+        MainProcessEx.Container.parent = this.Container
+        this.MainProcess = MainProcessEx
+        this.ServiceContainer = MainProcessEx.Container
+        this.Serviceinfo = info
+        this.ServiceMeta = meta
+        if (start) this.ServiceContainer.meta = meta
+        return MainProcessEx
+    }
+
+    /**
      * Bind container device terminate event
-    */
-    protected async bindTerminate() {
+     */
+    protected bindTerminate() {
         this.ServiceContainer.on('device.terminate', (data: { device: string; data: string; trace: any; }) => {
             if (data.trace instanceof CoreError) return this.serviceTerminate(data.trace)
             const CE = ErrorManager.make('SERVICE_CONTAINER_TERMINATE', { device: data.device })
@@ -684,7 +687,7 @@ export default class Serivce extends Device {
      * 
      * @see eventsChannels device events list
     */
-    protected async bindContainerDeviceEvents() {
+    protected bindContainerDeviceEvents() {
         for (const channel in this.eventsChannels) {
             this.ServiceContainer.on(channel, (data: { device: string; data: string; trace: any; }, args: any[]) => {
                 this.broadcast(
@@ -702,7 +705,7 @@ export default class Serivce extends Device {
      * 
      * @see renderPull
      */
-    protected async bindRenderEvent() {
+    protected bindRenderEvent() {
         this.ServiceContainer.on('device.render', (data: { device: string; data: string; trace: any; }) => {
             this.renderPull.add(data.device)
             if (!this.renderTimer) this.serviceRender()
@@ -745,8 +748,6 @@ export default class Serivce extends Device {
             case 'object':
                 if (trace instanceof Error) return CoreError.objectify(trace)
         }
-        // if (typeof trace === 'string') return { trace }
-        // return util.inspect(trace, { showHidden: false, depth: null, compact: false })
         return trace
     }
 
@@ -767,73 +768,39 @@ export default class Serivce extends Device {
         this.ports.output['broadcast'].push({ channel, data })
     }
 
-    // /**
-    //  * Send data to ServiceManager after service loaded
-    // */
-    // protected loaded() {
-    //     this.ports.output['send'].push({
-    //         __index: workerData.__index,
-    //         __id: workerData.__id,
-    //         resultData: workerData.__id
-    //     })
-    // }
-
     /**
      * Graceful stop of the running service container and worker self-exit.
      * Все завершающие процедуры — в единственной точке shutdown() (см. там).
      * Main сбросил conf.autoReload перед командой, поэтому exit не вызовет автоперезапуск.
      */
     async apiServiceStop(data: { service: string }, gData: IGuardMessage) {
-        if (!this.ServiceContainer) throw ErrorManager.make('SERVICE_CONTAINER_ERROR')
         return this.shutdown()
     }
 
     /**
-     * Единственная точка завершения воркера сервиса.
-     * Все пути (команда stop, device.terminate, uncaughtException, ошибки start/check)
-     * сходятся сюда, чтобы завершающие процедуры отрабатывали одинаково:
-     * 1) Если есть ошибка — уведомляем main ДО graceful-стопа, пока каналы живы:
-     *    висящий onStopAsync не оставит main в неведении.
-     * 2) Graceful stop: MainProcess.stop() — onStop()/onStopAsync() устройств +
-     *    Bootstrap.destroyAll() — onDestroy() boot-классов (ServiceLogger/PortLogger):
-     *    закрытие journal store и дописывание активных сегментов на диск.
-     *    (fallback: ServiceContainer.stopAll(), если MainProcess не создан).
-     * 3) Остановка worker-контейнера (Service/Master/WorkerProvider).
-     * 4) process.exit(0) — main воспринимает выход воркера как нормальный исход (WM_WORKER_EXIT).
-     * Идемпотентен: повторные вызовы игнорируются (shuttingDown).
+     * Завершение воркера сервиса: уведомить main об ошибке (если есть),
+     * остановить сервис (MainProcess.stop() — устройства + boot-классы),
+     * остановить воркер-контейнер, process.exit(0).
+     * Сюда сходятся все пути: команда stop, device.terminate,
+     * uncaughtException, ошибки start/check.
      */
     protected async shutdown(error?: Error): Promise<void> {
-        if (this.shuttingDown) return
-        this.shuttingDown = true
-
         if (error) {
             this.notifyMainError(error)
         }
 
-        let stopErr: Error | null = null
         if (this.MainProcess) {
             try {
                 await this.MainProcess.stop()
             } catch (e) {
-                stopErr = e as Error
-            }
-        } else if (this.ServiceContainer) {
-            try {
-                await this.ServiceContainer.stopAll()
-            } catch (e) {
-                stopErr = e as Error
+                this.notifyMainError(e as Error)
             }
         }
 
         try {
             await this.Container.stopAll()
         } catch (e) {
-            console.error(`[Service] failed to stop worker container: ${(e as Error).message}`)
-        }
-
-        // Ошибка graceful-стопа (путь apiServiceStop): уведомляем main после стопа
-        if (stopErr && !error) {
-            this.notifyMainError(stopErr)
+            console.error(`[Service] failed to stop worker container:`, e)
         }
 
         process.exit(0)
@@ -847,7 +814,7 @@ export default class Serivce extends Device {
                 error: CoreError.objectify(error)
             })
         } catch (e) {
-            console.error(`[Service] failed to notify main: ${(e as Error).message}`)
+            console.error('Service failed to notify main', error)
         }
     }
 

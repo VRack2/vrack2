@@ -27,10 +27,10 @@ vrack2_core_1.ErrorManager.register('ServiceLogger', 'SLS_STATS_TOO_MANY_BUCKETS
  *   - serviceLog        — чтение обеих таблиц (device_log + port_log), фильтр,
  *                         склейка повторяющихся (t/l/n) при чтении;
  *   - serviceLogStats   — компактная статистика: счётчики записей по бакетам
- *                         (interval) и типам за произвольный период;
+ *                         (interval) и типам за произвольный период + топ
+ *                         отправителей (device+port по убыванию количества);
  *   - serviceLogSet     — live вкл/выкл обоих boot-классов (enable/disable);
- *   - serviceLogClear   — truncate обеих таблиц;
- *   - serviceLogCompact — compact (дедупликация) обеих таблиц.
+ *   - serviceLogClear   — truncate обеих таблиц.
  *
  * Контейнер сервиса приходит по входному порту `container` (его передаёт
  * Service.ts в worker'е до run()); device достаёт из него boot-классы через
@@ -57,7 +57,7 @@ class ServiceLogger extends vrack2_core_1.Device {
 vrack2-core.ServiceLogger (таблица device_log: события устройств) и vrack2-core.PortLogger (таблица port_log:
 исходящие push'ы устройств), хранящие данные в vrack2-journal-db (<path>/<service>).
 Команды: serviceLog (чтение обеих таблиц со склейкой t/l/n), serviceLogSet (live вкл/выкл),
-serviceLogClear (truncate), serviceLogCompact (компакция/дедупликация).`;
+serviceLogClear (truncate).`;
     }
     inputs() {
         return {
@@ -147,7 +147,7 @@ serviceLogClear (truncate), serviceLogCompact (компакция/дедупли
         this.ports.output['register.command'].push({
             command: 'serviceLogStats',
             short: 'Service journal stats',
-            description: 'Compact journal statistics: record counts per time bucket (interval) and per type over an arbitrary period (days/weeks/months). Computed against vrack2-journal-db in the service worker — returns dense buckets {t, n, byType} instead of raw entries, so hot periods and gaps are visible without pulling the log.',
+            description: 'Compact journal statistics over an arbitrary period (days/weeks/months): `buckets` table [t, n, byType] — dense record counts per time bucket (gaps visible), `senders` table [device, port, count] — who sent to which port (sorted by count desc). Both as {header, rows} tables, computed against vrack2-journal-db in the service worker — no raw entries pulled.',
             level: 3,
             owner: this.type,
             icon: 'bar-chart',
@@ -168,30 +168,15 @@ serviceLogClear (truncate), serviceLogCompact (компакция/дедупли
                 interval: vrack2_core_1.Rule.string().example('1d').description('Bucket size (as requested)'),
                 total: vrack2_core_1.Rule.number().integer().example(4500).description('Total records in period (after filters)'),
                 totals: vrack2_core_1.Rule.any().example({ error: 140, terminal: 3100 }).description('Totals by type'),
-                buckets: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
-                    t: vrack2_core_1.Rule.number().integer().example(1718000000000).description('Bucket start (ms)'),
-                    n: vrack2_core_1.Rule.number().integer().example(123).description('Record count in bucket'),
-                    byType: vrack2_core_1.Rule.any().example({ terminal: 100, error: 5 }).description('Counts by type (non-zero only)'),
-                })).description('Dense buckets, chronological (empty buckets kept — journal gaps are visible)'),
+                buckets: vrack2_core_1.Rule.object().fields({
+                    header: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.string()).example(['t', 'n', 'byType']).description('Column names: t — bucket start (ms); n — record count; byType — counts by type'),
+                    rows: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.array()).example([[1718000000000, 123, { terminal: 100, error: 5 }]]).description('Rows [t, n, byType] (byType — map type->count, non-zero only)'),
+                }).description('Dense buckets table, chronological (empty buckets kept — journal gaps are visible)'),
+                senders: vrack2_core_1.Rule.object().fields({
+                    header: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.string()).example(['device', 'port', 'count']).description('Column names: device — sender; port — output port (null for device_log events); count — records in period'),
+                    rows: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.array()).example([['HttpServer', 'request', 51], ['Master', null, 15]]).description('Rows [device, port, count], sorted by count desc (max 200 rows)'),
+                }).description('Top senders table per device+port'),
             }).description('Journal stats result')
-        });
-        this.ports.output['register.command'].push({
-            command: 'serviceLogCompact',
-            short: 'Service journal compact',
-            description: 'Compact (deduplicate) the service journal tables (device_log + port_log) in vrack2-journal-db',
-            level: 3,
-            owner: this.type,
-            icon: 'log-list',
-            handler: this.apiServiceLogCompact.bind(this),
-            rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-            },
-            return: vrack2_core_1.Rule.object().fields({
-                mergedSegments: vrack2_core_1.Rule.number().integer().example(5).description('Closed segments merged into one'),
-                logicalRows: vrack2_core_1.Rule.number().integer().example(100).description('Logical rows preserved'),
-                physicalBefore: vrack2_core_1.Rule.number().integer().example(200).description('Physical rows before compaction (incl. duplicates)'),
-                physicalAfter: vrack2_core_1.Rule.number().integer().example(100).description('Physical rows after compaction'),
-            }).description('Compact result')
         });
     }
     /**
@@ -376,23 +361,36 @@ serviceLogClear (truncate), serviceLogCompact (компакция/дедупли
                 totals[type] = ((_b = totals[type]) !== null && _b !== void 0 ? _b : 0) + 1;
                 total++;
             };
+            // device+port -> count (топ отправителей)
+            const senderAcc = new Map();
+            const senderKey = (device, port) => device + '\u0000' + (port === null ? '__null__' : port);
+            const addSender = (device, port) => {
+                var _a;
+                const k = senderKey(device, port);
+                senderAcc.set(k, ((_a = senderAcc.get(k)) !== null && _a !== void 0 ? _a : 0) + 1);
+            };
             // device_log (события каналов): тип = поле event
             const eventTypes = wantedTypes.length ? wantedTypes.filter(t => t !== 'port') : null;
             if (((_g = this.sl) === null || _g === void 0 ? void 0 : _g.table) && (!eventTypes || eventTypes.length)) {
                 const where = [...deviceWhere];
                 if (eventTypes)
                     where.push({ field: 'event', op: 'in', value: eventTypes });
-                const rows = this.sl.table.scan({ start, end, select: ['ts', 'event'], where });
-                for (const r of rows)
+                const rows = this.sl.table.scan({ start, end, select: ['ts', 'event', 'device'], where });
+                for (const r of rows) {
                     add(Number(r.ts), String(r.event));
+                    addSender(String(r.device), null);
+                }
             }
             // port_log (исходящие push'ы): тип = 'port'
             if (((_h = this.pl) === null || _h === void 0 ? void 0 : _h.table) && (!wantedTypes.length || wantedTypes.includes('port'))) {
-                const rows = this.pl.table.scan({ start, end, select: ['ts'], where: deviceWhere });
-                for (const r of rows)
+                const rows = this.pl.table.scan({ start, end, select: ['ts', 'device', 'port'], where: deviceWhere });
+                for (const r of rows) {
                     add(Number(r.ts), 'port');
+                    addSender(String(r.device), r.port === null || r.port === undefined ? null : String(r.port));
+                }
             }
-            const buckets = [];
+            // Таблица бакетов: [t, n, byType], плотная (пустые бакеты сохранены — видны провалы)
+            const bucketRows = [];
             for (let b = firstBucket; b <= lastBucket; b += intervalMs) {
                 const m = acc.get(b);
                 const byType = {};
@@ -402,14 +400,25 @@ serviceLogClear (truncate), serviceLogCompact (компакция/дедупли
                         byType[t] = c;
                         n += c;
                     }
-                buckets.push({ t: b, n, byType });
+                bucketRows.push([b, n, byType]);
             }
+            // Таблица отправителей: [device, port, count], по убыванию count (макс 200)
+            const senderRows = [];
+            for (const [k, count] of senderAcc) {
+                const i = k.indexOf('\u0000');
+                const portRaw = k.slice(i + 1);
+                senderRows.push([k.slice(0, i), portRaw === '__null__' ? null : portRaw, count]);
+            }
+            senderRows.sort((a, b) => b[2] - a[2]);
+            if (senderRows.length > 200)
+                senderRows.length = 200;
             return {
                 period: { start, end },
                 interval: intervalStr,
                 total,
                 totals,
-                buckets,
+                buckets: { header: ['t', 'n', 'byType'], rows: bucketRows },
+                senders: { header: ['device', 'port', 'count'], rows: senderRows },
             };
         });
     }
@@ -444,28 +453,6 @@ serviceLogClear (truncate), serviceLogCompact (компакция/дедупли
             if ((_b = this.pl) === null || _b === void 0 ? void 0 : _b.table)
                 removedRows += this.pl.truncate().removedRows;
             return { cleared: true, removedRows };
-        });
-    }
-    /**
-     * Компакция (дедупликация) обеих таблиц.
-     */
-    apiServiceLogCompact(data, gData) {
-        return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b, _c, _d;
-            if (!((_a = this.sl) === null || _a === void 0 ? void 0 : _a.table) && !((_b = this.pl) === null || _b === void 0 ? void 0 : _b.table))
-                throw vrack2_core_1.ErrorManager.make('SERVICE_JOURNAL_DISABLED');
-            const agg = { mergedSegments: 0, logicalRows: 0, physicalBefore: 0, physicalAfter: 0 };
-            const merge = (r) => {
-                agg.mergedSegments += r.mergedSegments;
-                agg.logicalRows += r.logicalRows;
-                agg.physicalBefore += r.physicalBefore;
-                agg.physicalAfter += r.physicalAfter;
-            };
-            if ((_c = this.sl) === null || _c === void 0 ? void 0 : _c.table)
-                merge(this.sl.table.compact());
-            if ((_d = this.pl) === null || _d === void 0 ? void 0 : _d.table)
-                merge(this.pl.table.compact());
-            return agg;
         });
     }
 }

@@ -37,10 +37,10 @@ type LogEntry = {
  *   - serviceLog        — чтение обеих таблиц (device_log + port_log), фильтр,
  *                         склейка повторяющихся (t/l/n) при чтении;
  *   - serviceLogStats   — компактная статистика: счётчики записей по бакетам
- *                         (interval) и типам за произвольный период;
+ *                         (interval) и типам за произвольный период + топ
+ *                         отправителей (device+port по убыванию количества);
  *   - serviceLogSet     — live вкл/выкл обоих boot-классов (enable/disable);
- *   - serviceLogClear   — truncate обеих таблиц;
- *   - serviceLogCompact — compact (дедупликация) обеих таблиц.
+ *   - serviceLogClear   — truncate обеих таблиц.
  *
  * Контейнер сервиса приходит по входному порту `container` (его передаёт
  * Service.ts в worker'е до run()); device достаёт из него boot-классы через
@@ -141,10 +141,13 @@ export default class ServiceLogger extends Device {
         total: number;
         totals: Record<string, number>;
         buckets: {
-            t: number;
-            n: number;
-            byType: Record<string, number>;
-        }[];
+            header: string[];
+            rows: [number, number, Record<string, number>][];
+        };
+        senders: {
+            header: string[];
+            rows: [string, string | null, number][];
+        };
     }>;
     /**
      * Live-вкл/выкл журнала на УЖЕ РАБОТАЮЩЕМ сервисе (оба boot-класса сразу).
@@ -164,17 +167,6 @@ export default class ServiceLogger extends Device {
     }, gData: IGuardMessage): Promise<{
         cleared: boolean;
         removedRows: number;
-    }>;
-    /**
-     * Компакция (дедупликация) обеих таблиц.
-     */
-    apiServiceLogCompact(data: {
-        service: string;
-    }, gData: IGuardMessage): Promise<{
-        mergedSegments: number;
-        logicalRows: number;
-        physicalBefore: number;
-        physicalAfter: number;
     }>;
 }
 export {};

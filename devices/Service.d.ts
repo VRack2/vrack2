@@ -34,13 +34,8 @@ export default class Serivce extends Device {
      */
     MainProcess?: MainProcess;
     /**
-     * Guard: shutdown() may be triggered concurrently (device.terminate +
-     * uncaughtException); the first call wins, the rest are no-ops
-     */
-    shuttingDown: boolean;
-    /**
      * Service container
-    */
+     */
     ServiceContainer: Container;
     /**
      * Service info (getting from service manager)
@@ -59,6 +54,10 @@ export default class Serivce extends Device {
      */
     renderTimer: boolean | NodeJS.Timeout;
     /**
+     * Memory metrics timer (setInterval from onStart)
+     */
+    memTimer: NodeJS.Timeout | null;
+    /**
      * Индекс для захвата порта устройства
      */
     captureIndex: number;
@@ -67,6 +66,7 @@ export default class Serivce extends Device {
     */
     capturePull: Map<any, any>;
     onStart(): void;
+    onStop(): void;
     /**                 API SERVICE METHODS                 **/
     /**
      * Internal method for starting service
@@ -184,12 +184,23 @@ export default class Serivce extends Device {
     */
     apiCommandList(): Promise<any>;
     /**
-     * Getting device metric
-    */
-    apiServiceDeviceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
+     * Read device metric from a container
+     */
+    protected readDeviceMetric(container: Container, data: IDeviceMetricRequest): {
+        relevant: boolean;
+        start: number;
+        end: number;
+        rows: {
+            time: number;
+            value: number | null;
+        }[];
+    };
     /**
      * Getting device metric
-     * Obtaining system metrics. Those that were initialized at the VRack2 level
+     */
+    apiServiceDeviceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
+    /**
+     * Getting service metric (worker container, VRack2 level)
      */
     apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
     /**
@@ -201,9 +212,15 @@ export default class Serivce extends Device {
         data: any;
     }): Promise<void>;
     /**
+     * Create the service MainProcess and attach it to the worker
+     * (parent container, MainProcess/ServiceContainer/Serviceinfo/ServiceMeta fields).
+     * @param start true — full start (confFile + container.meta), false — check only
+     */
+    protected createMainProcess(info: IServiceConfig, meta: IServiceMeta, start: boolean): Promise<MainProcess>;
+    /**
      * Bind container device terminate event
-    */
-    protected bindTerminate(): Promise<void>;
+     */
+    protected bindTerminate(): void;
     /**
      * Bind container devices events
      *
@@ -211,7 +228,7 @@ export default class Serivce extends Device {
      *
      * @see eventsChannels device events list
     */
-    protected bindContainerDeviceEvents(): Promise<void>;
+    protected bindContainerDeviceEvents(): void;
     /**
      * Bind render device event
      *
@@ -219,7 +236,7 @@ export default class Serivce extends Device {
      *
      * @see renderPull
      */
-    protected bindRenderEvent(): Promise<void>;
+    protected bindRenderEvent(): void;
     /**
      * Send broadcast for device render event
      *
@@ -250,18 +267,11 @@ export default class Serivce extends Device {
         service: string;
     }, gData: IGuardMessage): Promise<void>;
     /**
-     * Единственная точка завершения воркера сервиса.
-     * Все пути (команда stop, device.terminate, uncaughtException, ошибки start/check)
-     * сходятся сюда, чтобы завершающие процедуры отрабатывали одинаково:
-     * 1) Если есть ошибка — уведомляем main ДО graceful-стопа, пока каналы живы:
-     *    висящий onStopAsync не оставит main в неведении.
-     * 2) Graceful stop: MainProcess.stop() — onStop()/onStopAsync() устройств +
-     *    Bootstrap.destroyAll() — onDestroy() boot-классов (ServiceLogger/PortLogger):
-     *    закрытие journal store и дописывание активных сегментов на диск.
-     *    (fallback: ServiceContainer.stopAll(), если MainProcess не создан).
-     * 3) Остановка worker-контейнера (Service/Master/WorkerProvider).
-     * 4) process.exit(0) — main воспринимает выход воркера как нормальный исход (WM_WORKER_EXIT).
-     * Идемпотентен: повторные вызовы игнорируются (shuttingDown).
+     * Завершение воркера сервиса: уведомить main об ошибке (если есть),
+     * остановить сервис (MainProcess.stop() — устройства + boot-классы),
+     * остановить воркер-контейнер, process.exit(0).
+     * Сюда сходятся все пути: команда stop, device.terminate,
+     * uncaughtException, ошибки start/check.
      */
     protected shutdown(error?: Error): Promise<void>;
     protected notifyMainError(error: Error): void;
