@@ -147,7 +147,7 @@ serviceLogClear (truncate).`;
         this.ports.output['register.command'].push({
             command: 'serviceLogStats',
             short: 'Service journal stats',
-            description: 'Compact journal statistics over an arbitrary period (days/weeks/months): `buckets` table [t, n, byType] — dense record counts per time bucket (gaps visible), `senders` table [device, port, count] — who sent to which port (sorted by count desc). Both as {header, rows} tables, computed against vrack2-journal-db in the service worker — no raw entries pulled.',
+            description: 'Compact journal statistics: record counts per time bucket (interval) and per type over an arbitrary period (days/weeks/months). Computed against vrack2-journal-db in the service worker — returns dense buckets {t, n, byType} instead of raw entries, so hot periods and gaps are visible without pulling the log. Plus `senders` — top device+port senders by record count (sorted desc), for a quick who-sent-what assessment.',
             level: 3,
             owner: this.type,
             icon: 'bar-chart',
@@ -168,14 +168,16 @@ serviceLogClear (truncate).`;
                 interval: vrack2_core_1.Rule.string().example('1d').description('Bucket size (as requested)'),
                 total: vrack2_core_1.Rule.number().integer().example(4500).description('Total records in period (after filters)'),
                 totals: vrack2_core_1.Rule.any().example({ error: 140, terminal: 3100 }).description('Totals by type'),
-                buckets: vrack2_core_1.Rule.object().fields({
-                    header: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.string()).example(['t', 'n', 'byType']).description('Column names: t — bucket start (ms); n — record count; byType — counts by type'),
-                    rows: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.array()).example([[1718000000000, 123, { terminal: 100, error: 5 }]]).description('Rows [t, n, byType] (byType — map type->count, non-zero only)'),
-                }).description('Dense buckets table, chronological (empty buckets kept — journal gaps are visible)'),
-                senders: vrack2_core_1.Rule.object().fields({
-                    header: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.string()).example(['device', 'port', 'count']).description('Column names: device — sender; port — output port (null for device_log events); count — records in period'),
-                    rows: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.array()).example([['HttpServer', 'request', 51], ['Master', null, 15]]).description('Rows [device, port, count], sorted by count desc (max 200 rows)'),
-                }).description('Top senders table per device+port'),
+                buckets: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
+                    t: vrack2_core_1.Rule.number().integer().example(1718000000000).description('Bucket start (ms)'),
+                    n: vrack2_core_1.Rule.number().integer().example(123).description('Record count in bucket'),
+                    byType: vrack2_core_1.Rule.any().example({ terminal: 100, error: 5 }).description('Counts by type (non-zero only)'),
+                })).description('Dense buckets, chronological (empty buckets kept — journal gaps are visible)'),
+                senders: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
+                    device: vrack2_core_1.Rule.string().example('HttpServer').description('Device id (sender)'),
+                    port: vrack2_core_1.Rule.any().example('request').description('Output port name (port_log rows); null for device_log events'),
+                    count: vrack2_core_1.Rule.number().integer().example(51).description('Records from this device+port in period'),
+                })).description('Top senders: counts per device+port, sorted by count desc (max 200 rows)'),
             }).description('Journal stats result')
         });
     }
@@ -389,8 +391,7 @@ serviceLogClear (truncate).`;
                     addSender(String(r.device), r.port === null || r.port === undefined ? null : String(r.port));
                 }
             }
-            // Таблица бакетов: [t, n, byType], плотная (пустые бакеты сохранены — видны провалы)
-            const bucketRows = [];
+            const buckets = [];
             for (let b = firstBucket; b <= lastBucket; b += intervalMs) {
                 const m = acc.get(b);
                 const byType = {};
@@ -400,25 +401,25 @@ serviceLogClear (truncate).`;
                         byType[t] = c;
                         n += c;
                     }
-                bucketRows.push([b, n, byType]);
+                buckets.push({ t: b, n, byType });
             }
-            // Таблица отправителей: [device, port, count], по убыванию count (макс 200)
-            const senderRows = [];
+            // Топ отправителей: device+port по убыванию количества (макс 200)
+            const senders = [];
             for (const [k, count] of senderAcc) {
                 const i = k.indexOf('\u0000');
                 const portRaw = k.slice(i + 1);
-                senderRows.push([k.slice(0, i), portRaw === '__null__' ? null : portRaw, count]);
+                senders.push({ device: k.slice(0, i), port: portRaw === '__null__' ? null : portRaw, count });
             }
-            senderRows.sort((a, b) => b[2] - a[2]);
-            if (senderRows.length > 200)
-                senderRows.length = 200;
+            senders.sort((a, b) => b.count - a.count);
+            if (senders.length > 200)
+                senders.length = 200;
             return {
                 period: { start, end },
                 interval: intervalStr,
                 total,
                 totals,
-                buckets: { header: ['t', 'n', 'byType'], rows: bucketRows },
-                senders: { header: ['device', 'port', 'count'], rows: senderRows },
+                buckets,
+                senders,
             };
         });
     }

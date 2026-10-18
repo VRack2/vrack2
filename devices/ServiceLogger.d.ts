@@ -141,13 +141,15 @@ export default class ServiceLogger extends Device {
         total: number;
         totals: Record<string, number>;
         buckets: {
-            header: string[];
-            rows: [number, number, Record<string, number>][];
-        };
+            t: number;
+            n: number;
+            byType: Record<string, number>;
+        }[];
         senders: {
-            header: string[];
-            rows: [string, string | null, number][];
-        };
+            device: string;
+            port: string | null;
+            count: number;
+        }[];
     }>;
     /**
      * Live-вкл/выкл журнала на УЖЕ РАБОТАЮЩЕМ сервисе (оба boot-класса сразу).
