@@ -26,9 +26,9 @@ vrack2_core_1.ErrorManager.register('ServiceLogger', 'SLS_STATS_TOO_MANY_BUCKETS
  * Это устройство — только поверх интерфейса команд/чтения:
  *   - serviceLog        — чтение обеих таблиц (device_log + port_log), фильтр,
  *                         склейка повторяющихся (t/l/n) при чтении;
- *   - serviceLogStats   — компактная статистика: счётчики записей по бакетам
- *                         (interval) и типам за произвольный период + топ
- *                         отправителей (device+port по убыванию количества);
+ *   - serviceLogStats   — компактная статистика: по бакетам (interval) за произвольный
+ *                         период — кто (device) что (byType) и сколько отправил
+ *                         (senders внутри каждого бакета, по убыванию количества);
  *   - serviceLogSet     — live вкл/выкл обоих boot-классов (enable/disable);
  *   - serviceLogClear   — truncate обеих таблиц.
  *
@@ -147,7 +147,7 @@ serviceLogClear (truncate).`;
         this.ports.output['register.command'].push({
             command: 'serviceLogStats',
             short: 'Service journal stats',
-            description: 'Compact journal statistics: record counts per time bucket (interval) and per type over an arbitrary period (days/weeks/months). Computed against vrack2-journal-db in the service worker — returns dense buckets {t, n, byType} instead of raw entries, so hot periods and gaps are visible without pulling the log. Plus `senders` — top device+port senders by record count (sorted desc), for a quick who-sent-what assessment.',
+            description: 'Compact journal statistics: per time bucket (interval) over an arbitrary period (days/weeks/months) — who (device) sent what (by type) and how much. Computed against vrack2-journal-db in the service worker — returns dense buckets {start, end, senders:[{device, byType}]} instead of raw entries, so hot periods and gaps are visible without pulling the log. senders in each bucket are sorted by total count desc.',
             level: 3,
             owner: this.type,
             icon: 'bar-chart',
@@ -161,23 +161,18 @@ serviceLogClear (truncate).`;
                 maxBuckets: vrack2_core_1.Rule.number().integer().min(2).max(20000).default(5000).description('Max buckets to return; use a coarser interval if the period is wider'),
             },
             return: vrack2_core_1.Rule.object().fields({
-                period: vrack2_core_1.Rule.object().fields({
-                    start: vrack2_core_1.Rule.number().integer().example(1718000000000).description('Period start (ms)'),
-                    end: vrack2_core_1.Rule.number().integer().example(1718100000000).description('Period end (ms)'),
-                }).description('Resolved period'),
+                start: vrack2_core_1.Rule.number().integer().example(1718000000000).description('Period start (ms)'),
+                end: vrack2_core_1.Rule.number().integer().example(1718100000000).description('Period end (ms)'),
                 interval: vrack2_core_1.Rule.string().example('1d').description('Bucket size (as requested)'),
                 total: vrack2_core_1.Rule.number().integer().example(4500).description('Total records in period (after filters)'),
-                totals: vrack2_core_1.Rule.any().example({ error: 140, terminal: 3100 }).description('Totals by type'),
                 buckets: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
-                    t: vrack2_core_1.Rule.number().integer().example(1718000000000).description('Bucket start (ms)'),
-                    n: vrack2_core_1.Rule.number().integer().example(123).description('Record count in bucket'),
-                    byType: vrack2_core_1.Rule.any().example({ terminal: 100, error: 5 }).description('Counts by type (non-zero only)'),
+                    start: vrack2_core_1.Rule.number().integer().example(1718000000000).description('Bucket interval start (ms)'),
+                    end: vrack2_core_1.Rule.number().integer().example(1718100000000).description('Bucket interval end (ms)'),
+                    senders: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
+                        device: vrack2_core_1.Rule.string().example('HttpServer').description('Device id (sender)'),
+                        byType: vrack2_core_1.Rule.any().example({ port: 51, notify: 21 }).description('Counts by type (non-zero only)'),
+                    })).description('Senders in this bucket, sorted by total count desc'),
                 })).description('Dense buckets, chronological (empty buckets kept — journal gaps are visible)'),
-                senders: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
-                    device: vrack2_core_1.Rule.string().example('HttpServer').description('Device id (sender)'),
-                    port: vrack2_core_1.Rule.any().example('request').description('Output port name (port_log rows); null for device_log events'),
-                    count: vrack2_core_1.Rule.number().integer().example(51).description('Records from this device+port in period'),
-                })).description('Top senders: counts per device+port, sorted by count desc (max 200 rows)'),
             }).description('Journal stats result')
         });
     }
@@ -347,29 +342,24 @@ serviceLogClear (truncate).`;
             const wantedTypes = ((_e = data.types) !== null && _e !== void 0 ? _e : []).map(t => String(t)).filter(Boolean);
             const wantedDevices = ((_f = data.devices) !== null && _f !== void 0 ? _f : []).map(d => String(d)).filter(Boolean);
             const deviceWhere = wantedDevices.length ? [{ field: 'device', op: 'in', value: wantedDevices }] : [];
-            // bucketStart -> { type -> count }
+            // bucketStart -> device -> type -> count
             const acc = new Map();
-            const totals = {};
             let total = 0;
-            const add = (ts, type) => {
-                var _a, _b;
-                const b = Math.floor(ts / intervalMs) * intervalMs;
-                let m = acc.get(b);
-                if (!m) {
-                    m = new Map();
-                    acc.set(b, m);
-                }
-                m.set(type, ((_a = m.get(type)) !== null && _a !== void 0 ? _a : 0) + 1);
-                totals[type] = ((_b = totals[type]) !== null && _b !== void 0 ? _b : 0) + 1;
-                total++;
-            };
-            // device+port -> count (топ отправителей)
-            const senderAcc = new Map();
-            const senderKey = (device, port) => device + '\u0000' + (port === null ? '__null__' : port);
-            const addSender = (device, port) => {
+            const add = (ts, type, device) => {
                 var _a;
-                const k = senderKey(device, port);
-                senderAcc.set(k, ((_a = senderAcc.get(k)) !== null && _a !== void 0 ? _a : 0) + 1);
+                const b = Math.floor(ts / intervalMs) * intervalMs;
+                let dm = acc.get(b);
+                if (!dm) {
+                    dm = new Map();
+                    acc.set(b, dm);
+                }
+                let tm = dm.get(device);
+                if (!tm) {
+                    tm = new Map();
+                    dm.set(device, tm);
+                }
+                tm.set(type, ((_a = tm.get(type)) !== null && _a !== void 0 ? _a : 0) + 1);
+                total++;
             };
             // device_log (события каналов): тип = поле event
             const eventTypes = wantedTypes.length ? wantedTypes.filter(t => t !== 'port') : null;
@@ -379,47 +369,45 @@ serviceLogClear (truncate).`;
                     where.push({ field: 'event', op: 'in', value: eventTypes });
                 const rows = this.sl.table.scan({ start, end, select: ['ts', 'event', 'device'], where });
                 for (const r of rows) {
-                    add(Number(r.ts), String(r.event));
-                    addSender(String(r.device), null);
+                    const dev = String(r.device);
+                    add(Number(r.ts), String(r.event), dev);
                 }
             }
             // port_log (исходящие push'ы): тип = 'port'
             if (((_h = this.pl) === null || _h === void 0 ? void 0 : _h.table) && (!wantedTypes.length || wantedTypes.includes('port'))) {
-                const rows = this.pl.table.scan({ start, end, select: ['ts', 'device', 'port'], where: deviceWhere });
+                const rows = this.pl.table.scan({ start, end, select: ['ts', 'device'], where: deviceWhere });
                 for (const r of rows) {
-                    add(Number(r.ts), 'port');
-                    addSender(String(r.device), r.port === null || r.port === undefined ? null : String(r.port));
+                    const dev = String(r.device);
+                    add(Number(r.ts), 'port', dev);
                 }
             }
+            const sumByType = (byType) => {
+                let s = 0;
+                for (const k in byType)
+                    s += byType[k];
+                return s;
+            };
             const buckets = [];
             for (let b = firstBucket; b <= lastBucket; b += intervalMs) {
-                const m = acc.get(b);
-                const byType = {};
-                let n = 0;
-                if (m)
-                    for (const [t, c] of m) {
-                        byType[t] = c;
-                        n += c;
+                const dm = acc.get(b);
+                const senders = [];
+                if (dm) {
+                    for (const [device, tm] of dm) {
+                        const byType = {};
+                        for (const [t, c] of tm)
+                            byType[t] = c;
+                        senders.push({ device, byType });
                     }
-                buckets.push({ t: b, n, byType });
+                }
+                senders.sort((a, b2) => sumByType(b2.byType) - sumByType(a.byType));
+                buckets.push({ start: b, end: b + intervalMs, senders });
             }
-            // Топ отправителей: device+port по убыванию количества (макс 200)
-            const senders = [];
-            for (const [k, count] of senderAcc) {
-                const i = k.indexOf('\u0000');
-                const portRaw = k.slice(i + 1);
-                senders.push({ device: k.slice(0, i), port: portRaw === '__null__' ? null : portRaw, count });
-            }
-            senders.sort((a, b) => b.count - a.count);
-            if (senders.length > 200)
-                senders.length = 200;
             return {
-                period: { start, end },
+                start,
+                end,
                 interval: intervalStr,
                 total,
-                totals,
                 buckets,
-                senders,
             };
         });
     }

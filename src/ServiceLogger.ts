@@ -55,9 +55,9 @@ type LogEntry = {
  * Это устройство — только поверх интерфейса команд/чтения:
  *   - serviceLog        — чтение обеих таблиц (device_log + port_log), фильтр,
  *                         склейка повторяющихся (t/l/n) при чтении;
- *   - serviceLogStats   — компактная статистика: счётчики записей по бакетам
- *                         (interval) и типам за произвольный период + топ
- *                         отправителей (device+port по убыванию количества);
+ *   - serviceLogStats   — компактная статистика: по бакетам (interval) за произвольный
+ *                         период — кто (device) что (byType) и сколько отправил
+ *                         (senders внутри каждого бакета, по убыванию количества);
  *   - serviceLogSet     — live вкл/выкл обоих boot-классов (enable/disable);
  *   - serviceLogClear   — truncate обеих таблиц.
  *
@@ -184,7 +184,7 @@ serviceLogClear (truncate).`
         this.ports.output['register.command'].push({
             command: 'serviceLogStats',
             short: 'Service journal stats',
-            description: 'Compact journal statistics: record counts per time bucket (interval) and per type over an arbitrary period (days/weeks/months). Computed against vrack2-journal-db in the service worker — returns dense buckets {t, n, byType} instead of raw entries, so hot periods and gaps are visible without pulling the log. Plus `senders` — top device+port senders by record count (sorted desc), for a quick who-sent-what assessment.',
+            description: 'Compact journal statistics: per time bucket (interval) over an arbitrary period (days/weeks/months) — who (device) sent what (by type) and how much. Computed against vrack2-journal-db in the service worker — returns dense buckets {start, end, senders:[{device, byType}]} instead of raw entries, so hot periods and gaps are visible without pulling the log. senders in each bucket are sorted by total count desc.',
             level: 3,
             owner: this.type,
             icon: 'bar-chart',
@@ -198,23 +198,18 @@ serviceLogClear (truncate).`
                 maxBuckets: Rule.number().integer().min(2).max(20000).default(5000).description('Max buckets to return; use a coarser interval if the period is wider'),
             },
             return: Rule.object().fields({
-                period: Rule.object().fields({
-                    start: Rule.number().integer().example(1718000000000).description('Period start (ms)'),
-                    end: Rule.number().integer().example(1718100000000).description('Period end (ms)'),
-                }).description('Resolved period'),
+                start: Rule.number().integer().example(1718000000000).description('Period start (ms)'),
+                end: Rule.number().integer().example(1718100000000).description('Period end (ms)'),
                 interval: Rule.string().example('1d').description('Bucket size (as requested)'),
                 total: Rule.number().integer().example(4500).description('Total records in period (after filters)'),
-                totals: Rule.any().example({ error: 140, terminal: 3100 }).description('Totals by type'),
                 buckets: Rule.array().content(Rule.object().fields({
-                    t: Rule.number().integer().example(1718000000000).description('Bucket start (ms)'),
-                    n: Rule.number().integer().example(123).description('Record count in bucket'),
-                    byType: Rule.any().example({ terminal: 100, error: 5 }).description('Counts by type (non-zero only)'),
+                    start: Rule.number().integer().example(1718000000000).description('Bucket interval start (ms)'),
+                    end: Rule.number().integer().example(1718100000000).description('Bucket interval end (ms)'),
+                    senders: Rule.array().content(Rule.object().fields({
+                        device: Rule.string().example('HttpServer').description('Device id (sender)'),
+                        byType: Rule.any().example({ port: 51, notify: 21 }).description('Counts by type (non-zero only)'),
+                    })).description('Senders in this bucket, sorted by total count desc'),
                 })).description('Dense buckets, chronological (empty buckets kept — journal gaps are visible)'),
-                senders: Rule.array().content(Rule.object().fields({
-                    device: Rule.string().example('HttpServer').description('Device id (sender)'),
-                    port: Rule.any().example('request').description('Output port name (port_log rows); null for device_log events'),
-                    count: Rule.number().integer().example(51).description('Records from this device+port in period'),
-                })).description('Top senders: counts per device+port, sorted by count desc (max 200 rows)'),
             }).description('Journal stats result')
         })
 
@@ -371,25 +366,17 @@ serviceLogClear (truncate).`
         const wantedDevices = (data.devices ?? []).map(d => String(d)).filter(Boolean)
         const deviceWhere: NonNullable<ScanOptions['where']> = wantedDevices.length ? [{ field: 'device', op: 'in', value: wantedDevices }] : []
 
-        // bucketStart -> { type -> count }
-        const acc = new Map<number, Map<string, number>>()
-        const totals: Record<string, number> = {}
+        // bucketStart -> device -> type -> count
+        const acc = new Map<number, Map<string, Map<string, number>>>()
         let total = 0
-        const add = (ts: number, type: string) => {
+        const add = (ts: number, type: string, device: string) => {
             const b = Math.floor(ts / intervalMs) * intervalMs
-            let m = acc.get(b)
-            if (!m) { m = new Map(); acc.set(b, m) }
-            m.set(type, (m.get(type) ?? 0) + 1)
-            totals[type] = (totals[type] ?? 0) + 1
+            let dm = acc.get(b)
+            if (!dm) { dm = new Map(); acc.set(b, dm) }
+            let tm = dm.get(device)
+            if (!tm) { tm = new Map(); dm.set(device, tm) }
+            tm.set(type, (tm.get(type) ?? 0) + 1)
             total++
-        }
-
-        // device+port -> count (топ отправителей)
-        const senderAcc = new Map<string, number>()
-        const senderKey = (device: string, port: string | null) => device + '\u0000' + (port === null ? '__null__' : port)
-        const addSender = (device: string, port: string | null) => {
-            const k = senderKey(device, port)
-            senderAcc.set(k, (senderAcc.get(k) ?? 0) + 1)
         }
 
         // device_log (события каналов): тип = поле event
@@ -398,43 +385,41 @@ serviceLogClear (truncate).`
             const where = [...deviceWhere]
             if (eventTypes) where.push({ field: 'event', op: 'in', value: eventTypes })
             const rows = this.sl.table.scan({ start, end, select: ['ts', 'event', 'device'], where })
-            for (const r of rows) { add(Number(r.ts), String(r.event)); addSender(String(r.device), null) }
+            for (const r of rows) { const dev = String(r.device); add(Number(r.ts), String(r.event), dev) }
         }
         // port_log (исходящие push'ы): тип = 'port'
         if (this.pl?.table && (!wantedTypes.length || wantedTypes.includes('port'))) {
-            const rows = this.pl.table.scan({ start, end, select: ['ts', 'device', 'port'], where: deviceWhere })
-            for (const r of rows) {
-                add(Number(r.ts), 'port')
-                addSender(String(r.device), r.port === null || r.port === undefined ? null : String(r.port))
-            }
+            const rows = this.pl.table.scan({ start, end, select: ['ts', 'device'], where: deviceWhere })
+            for (const r of rows) { const dev = String(r.device); add(Number(r.ts), 'port', dev) }
         }
 
-        const buckets: Array<{ t: number, n: number, byType: Record<string, number> }> = []
+        const sumByType = (byType: Record<string, number>): number => {
+            let s = 0
+            for (const k in byType) s += byType[k]
+            return s
+        }
+
+        const buckets: Array<{ start: number, end: number, senders: Array<{ device: string, byType: Record<string, number> }> }> = []
         for (let b = firstBucket; b <= lastBucket; b += intervalMs) {
-            const m = acc.get(b)
-            const byType: Record<string, number> = {}
-            let n = 0
-            if (m) for (const [t, c] of m) { byType[t] = c; n += c }
-            buckets.push({ t: b, n, byType })
+            const dm = acc.get(b)
+            const senders: Array<{ device: string, byType: Record<string, number> }> = []
+            if (dm) {
+                for (const [device, tm] of dm) {
+                    const byType: Record<string, number> = {}
+                    for (const [t, c] of tm) byType[t] = c
+                    senders.push({ device, byType })
+                }
+            }
+            senders.sort((a, b2) => sumByType(b2.byType) - sumByType(a.byType))
+            buckets.push({ start: b, end: b + intervalMs, senders })
         }
-
-        // Топ отправителей: device+port по убыванию количества (макс 200)
-        const senders: Array<{ device: string, port: string | null, count: number }> = []
-        for (const [k, count] of senderAcc) {
-            const i = k.indexOf('\u0000')
-            const portRaw = k.slice(i + 1)
-            senders.push({ device: k.slice(0, i), port: portRaw === '__null__' ? null : portRaw, count })
-        }
-        senders.sort((a, b) => b.count - a.count)
-        if (senders.length > 200) senders.length = 200
 
         return {
-            period: { start, end },
+            start,
+            end,
             interval: intervalStr,
             total,
-            totals,
             buckets,
-            senders,
         }
     }
 

@@ -319,6 +319,21 @@ export default class Serivce extends Device {
         
 
         this.ports.output['register.command'].push({
+            command: 'serviceStructure',
+            short: 'Get structure schema',
+            description: 'Return structure schema of the running service: by default (compact:true) devices with their ports and connections only (no metrics, no actions, no display settings); compact:false — the full container structure',
+            level: 3,
+            owner: this.type,
+            icon: 'map-fill',
+            handler: this.apiServiceStructure.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                compact: Rule.boolean().default(true).example(true).description('true (default) — compact schema (devices + ports + connections only), false — full container structure'),
+            },
+            return: Rule.object().description('compact:true — { [deviceId]: { type, ports: [{ port, direct, description }], outputs: { [port]: [{ device, port }] }, inputs: { [port]: [{ device, port }] } } }; compact:false — full container structure (see IContainerStructure)')
+        })
+
+        this.ports.output['register.command'].push({
             command: 'serviceDeviceMetric',
             description: 'Getting a service device metrics',
             level: 3,
@@ -613,6 +628,30 @@ export default class Serivce extends Device {
          *  Very important  - EXPORT DATA !!!
          * */
         return JSON.parse(JSON.stringify(ret))
+    }
+
+    /**
+     * Get the structure schema of the running service container
+     *
+     * Takes the live Container structure (the same data StructureStorage
+     * persists to disk). By default (compact:true) it is trimmed to devices +
+     * ports + connections only: no metrics, no actions, no display settings.
+     * compact:false returns the full container structure.
+     */
+    async apiServiceStructure(data: { service: string, compact?: boolean }, gData: IGuardMessage) {
+        const structure = await this.ServiceContainer.getStructure()
+        if (data.compact === false) return structure
+        const compact: { [key: string]: { type: string, ports: Array<{ port: string, direct: string, description?: string }>, outputs: { [key: string]: Array<{ device: string, port: string }> }, inputs: { [key: string]: Array<{ device: string, port: string }> } } } = {}
+        for (const id in structure) {
+            const d = structure[id]
+            compact[id] = {
+                type: d.type,
+                ports: (d.ports || []).map(p => ({ port: p.port, direct: p.direct, description: p.description })),
+                outputs: d.outputs || {},
+                inputs: d.inputs || {},
+            }
+        }
+        return compact
     }
 
     /**

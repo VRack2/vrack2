@@ -184,6 +184,39 @@ export default class Serivce extends Device {
     */
     apiCommandList(): Promise<any>;
     /**
+     * Get the structure schema of the running service container
+     *
+     * Takes the live Container structure (the same data StructureStorage
+     * persists to disk). By default (compact:true) it is trimmed to devices +
+     * ports + connections only: no metrics, no actions, no display settings.
+     * compact:false returns the full container structure.
+     */
+    apiServiceStructure(data: {
+        service: string;
+        compact?: boolean;
+    }, gData: IGuardMessage): Promise<{
+        [key: string]: {
+            type: string;
+            ports: Array<{
+                port: string;
+                direct: string;
+                description?: string;
+            }>;
+            outputs: {
+                [key: string]: Array<{
+                    device: string;
+                    port: string;
+                }>;
+            };
+            inputs: {
+                [key: string]: Array<{
+                    device: string;
+                    port: string;
+                }>;
+            };
+        };
+    }>;
+    /**
      * Read device metric from a container
      */
     protected readDeviceMetric(container: Container, data: IDeviceMetricRequest): {

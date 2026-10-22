@@ -36,9 +36,9 @@ type LogEntry = {
  * Это устройство — только поверх интерфейса команд/чтения:
  *   - serviceLog        — чтение обеих таблиц (device_log + port_log), фильтр,
  *                         склейка повторяющихся (t/l/n) при чтении;
- *   - serviceLogStats   — компактная статистика: счётчики записей по бакетам
- *                         (interval) и типам за произвольный период + топ
- *                         отправителей (device+port по убыванию количества);
+ *   - serviceLogStats   — компактная статистика: по бакетам (interval) за произвольный
+ *                         период — кто (device) что (byType) и сколько отправил
+ *                         (senders внутри каждого бакета, по убыванию количества);
  *   - serviceLogSet     — live вкл/выкл обоих boot-классов (enable/disable);
  *   - serviceLogClear   — truncate обеих таблиц.
  *
@@ -133,22 +133,17 @@ export default class ServiceLogger extends Device {
         devices?: string[];
         maxBuckets?: number;
     }, gData: IGuardMessage): Promise<{
-        period: {
-            start: number;
-            end: number;
-        };
+        start: number;
+        end: number;
         interval: string;
         total: number;
-        totals: Record<string, number>;
         buckets: {
-            t: number;
-            n: number;
-            byType: Record<string, number>;
-        }[];
-        senders: {
-            device: string;
-            port: string | null;
-            count: number;
+            start: number;
+            end: number;
+            senders: Array<{
+                device: string;
+                byType: Record<string, number>;
+            }>;
         }[];
     }>;
     /**
