@@ -13,5 +13,6 @@
     "InterService": "devices/InterService",
     "DeviceInfo": "devices/DeviceInfo",
     "DeviceWorker": "devices/DeviceWorker",
-    "ServiceLogger": "devices/ServiceLogger"
+    "ServiceLogger": "devices/ServiceLogger",
+    "ServiceJournal": "devices/ServiceJournal"
 }

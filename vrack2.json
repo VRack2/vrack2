@@ -40,7 +40,7 @@
             "id": "Master",
             "type": "vrack2.Master",
             "options": { 
-                "registerPorts": 6,
+                "registerPorts": 7,
                 "commandPorts": 3
             },
             "connections": [
@@ -112,6 +112,14 @@
             "options": { },
             "connections": [
                 "Mcp.command -> Master.command3"
+            ]
+        },
+        {
+            "id": "ServiceJournal",
+            "type": "vrack2.ServiceJournal",
+            "options": { },
+            "connections": [
+                "ServiceJournal.register.command -> Master.register7"
             ]
         }
     ]
