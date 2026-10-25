@@ -49,7 +49,7 @@ serviceLogStats (баке-статистика), serviceLogClear (truncate, то
     }
     onStart() {
         this.ports.output['register.command'].push({
-            command: 'serviceLog',
+            command: 'offlineLog',
             short: 'Service journal read',
             description: 'Read the service journal from disk: device events (device_log) + outgoing port pushes (port_log) in vrack2-journal-db. Works without the service being running. Consecutive identical values are compacted into one record (t/l/n).',
             level: 3,
@@ -78,7 +78,7 @@ serviceLogStats (баке-статистика), serviceLogClear (truncate, то
             }).description('Journal read result')
         });
         this.ports.output['register.command'].push({
-            command: 'serviceLogStats',
+            command: 'offlineLogStats',
             short: 'Service journal stats',
             description: 'Compact journal statistics from disk: per time bucket (interval) over an arbitrary period — who (device) sent what (by type) and how much. Works without the service being running.',
             level: 3,
@@ -109,7 +109,7 @@ serviceLogStats (баке-статистика), serviceLogClear (truncate, то
             }).description('Journal stats result')
         });
         this.ports.output['register.command'].push({
-            command: 'serviceLogClear',
+            command: 'offlineLogClear',
             short: 'Service journal clear',
             description: 'Clear the service journal (truncate the device_log and port_log tables in vrack2-journal-db). Only works when the service is NOT running.',
             level: 3,
