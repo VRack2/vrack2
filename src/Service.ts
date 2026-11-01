@@ -1,4 +1,4 @@
-import { Bootstrap, Container, CoreError, Device, ErrorManager, ImportManager, MainProcess, Port, Rule, Metric, BasicMetric, JournalDbMetrics } from "vrack2-core";
+import { Bootstrap, Container, CoreError, Device, ErrorManager, ImportManager, MainProcess, Port, Rule, Metric, MetricOne, JournalDbMetrics } from "vrack2-core";
 
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
@@ -8,7 +8,7 @@ import { threadId } from "worker_threads"
 
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from './interfaces/IServiceConfig';
-import IServiceMeta from "./interfaces/IServiceMeta";
+import IServiceMeta, { IServiceJournal } from "./interfaces/IServiceMeta";
 import IDeviceActionRequest from "./interfaces/IDeviceActionRequest";
 
 import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
@@ -54,13 +54,13 @@ export default class Serivce extends Device {
         }
     }
 
-    metrics(): { [key: string]: BasicMetric; } {
+    metrics(): { [key: string]: MetricOne; } {
         return {
-            'memory.rss': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory rss'),
-            'memory.heaptotal': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapTotal'),
-            'memory.heapused': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapUsed'),
-            'memory.external': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory external'),
-            'memory.arraybuffers': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory arrayBuffers'),
+            'memory.rss': Metric.one().descriptions('System memory rss'),
+            'memory.heaptotal': Metric.one().descriptions('System memory heapTotal'),
+            'memory.heapused': Metric.one().descriptions('System memory heapUsed'),
+            'memory.external': Metric.one().descriptions('System memory external'),
+            'memory.arraybuffers': Metric.one().descriptions('System memory arrayBuffers'),
         }
     }
 
@@ -133,6 +133,18 @@ export default class Serivce extends Device {
      * Пулл для хранения таймаутов захвата порта устройства
     */
     capturePull = new Map()
+
+    /**
+     * Journal batches waiting to be forwarded to the master Journal device
+     */
+    journalEvents: Array<any> = []
+    journalPorts: Array<any> = []
+    journalMetrics: Array<any> = []
+
+    /**
+     * Journal flush timer (250ms batching window)
+     */
+    journalTimer: NodeJS.Timeout | null = null
 
     onStart(): void {
         // Register api commands
@@ -334,31 +346,15 @@ export default class Serivce extends Device {
         })
 
         this.ports.output['register.command'].push({
-            command: 'serviceDeviceMetric',
-            description: 'Getting a service device metrics',
-            level: 3,
+            command: 'serviceJournalSet',
+            description: 'Internal live toggle of the service journal capture (meta.journal applied without restart)',
+            level: 0,
             owner: this.type,
-            icon: 'graph-up',
-            handler: this.apiServiceDeviceMetric.bind(this),
+            handler: this.apiServiceJournalSet.bind(this),
             rules: {
                 service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
-                metric: Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
-                period: Rule.string().maxLength(120).required().example('now-1h:now').description('VRackDB period'),
-                precision: Rule.string().maxLength(60).required().example('30s').description('VRackDB precision'),
-                func: Rule.string().default('last').maxLength(10).example('last').description('Read function (last,first,min,max,avg,sum)')
+                journal: Rule.any().default(null).description('Journal capture config (null = default: capture everything)'),
             },
-            return: Rule.object().fields({
-                relevant: Rule.boolean().default(false).example(false).description('result relevance flag'),
-                start: Rule.number().integer().example(1).description('Beginning of the period'),
-                end: Rule.number().integer().example(100).description('End of period '),
-                rows: Rule.array().content(
-                    Rule.object().fields({
-                        time: Rule.number().integer().example(10).description('Time in MTU'),
-                        value: Rule.number().example(12.3223).description('Metric value || null')
-                    }).description('Metric storage object')
-                ).description('Array of metrics')
-            }).description('Metric request result - see vrack-db read documentation')
         })
 
 
@@ -427,6 +423,10 @@ export default class Serivce extends Device {
 
     onStop(): void {
         if (this.memTimer) clearInterval(this.memTimer)
+        if (this.journalTimer) {
+            clearTimeout(this.journalTimer)
+            this.journalTimer = null
+        }
     }
 
     /**                 API SERVICE METHODS                 **/
@@ -483,16 +483,16 @@ export default class Serivce extends Device {
     */
     async apiServiceStartSafe(data: { info: IServiceConfig, meta: IServiceMeta }, gData: IGuardMessage) {
         const MainProcessEx = await this.createMainProcess(data.info, data.meta, true)
-        // Сначала «собрать» контейнер: загрузить boot-классы и устройства.
-        // ServiceLogger.getBootClass требует, чтобы Bootstrap.loaded уже был заполнен
-        // (loadBootList живёт в check()), иначе журнал сервисов молча теряется.
+        // Сначала «собрать» контейнер: загрузить boot-классы и устройства
+        // (loadBootList живёт в check()).
         // run() идемпотентен: повторный check() + runStart() безопасны.
         await MainProcessEx.check()
         // Пробрасываем контейнер и мета до runStart(),
-        // чтобы внешнее устройство (ServiceLogger) успело подписаться на события запуска
+        // чтобы подписчики успели подключиться к событиям запуска
         this.ports.output['container'].push({ container: this.ServiceContainer, meta: data.meta })
         this.bindRenderEvent()
         this.bindTerminate()
+        this.bindJournal()
         MainProcessEx.run()
         this.bindContainerDeviceEvents()
     }
@@ -664,17 +664,20 @@ export default class Serivce extends Device {
     }
 
     /**
-     * Getting device metric
-     */
-    async apiServiceDeviceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-        return this.readDeviceMetric(this.ServiceContainer, data)
-    }
-
-    /**
      * Getting service metric (worker container, VRack2 level)
      */
     async apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
         return this.readDeviceMetric(this.Container, data)
+    }
+
+    /**
+     * Live apply of the journal capture config (serviceLogSet → ServiceManager
+     * → this internal command). Capture checks meta at event time, so the new
+     * config takes effect on the very next event.
+     */
+    async apiServiceJournalSet(data: { service: string, journal: any }, gData: IGuardMessage) {
+        this.ServiceMeta.journal = (data.journal === null || data.journal === undefined) ? undefined : data.journal as IServiceJournal
+        return { journal: this.ServiceMeta.journal ?? null }
     }
 
 
@@ -696,6 +699,14 @@ export default class Serivce extends Device {
      */
     protected async createMainProcess(info: IServiceConfig, meta: IServiceMeta, start: boolean): Promise<MainProcess> {
         const service = this.normalizeServiceBootstrap(ImportManager.importJSON(info.filePath))
+        // Unified VRack2-level journal: the per-service journal boot classes
+        // (port_log / metrics stores) are disabled — events, port pushes and
+        // metrics are forwarded to the master Journal device instead (see
+        // bindJournal / flushJournal). A `null` entry removes the id from the
+        // merged bootlist (Bootstrap.mergeBootList).
+        if (!service.bootstrap) service.bootstrap = {}
+        service.bootstrap.PortLogger = null
+        service.bootstrap.DeviceMetrics = null
         const MainProcessClass = await ImportManager.importClass(this.options.mainProcessPath) as typeof MainProcess
         const MainProcessEx = new MainProcessClass({ id: info.id, service, ...(start ? { confFile: info.configPath } : {}) })
         MainProcessEx.Container.parent = this.Container
@@ -734,6 +745,92 @@ export default class Serivce extends Device {
                     { message: data.data, trace: this.makeBroadcastTrace(data.trace), args }
                 )
             })
+        }
+    }
+
+    /**                 JOURNAL FORWARDING                 **/
+
+    /**
+     * Subscribe to the service container events (device channels, port
+     * pushes, metrics) and forward them in batches to the master Journal
+     * device. Capture toggles (meta.journal) are checked at event time, so
+     * serviceLogSet applies live.
+     */
+    protected bindJournal() {
+        const svc = this.Serviceinfo.id
+        const channels: { [key: string]: string } = { ...this.eventsChannels, 'device.terminate': 'terminate' }
+        for (const channel in channels) {
+            const type = channels[channel]
+            this.ServiceContainer.on(channel, (data: { device: string; data: any; trace: any; }) => {
+                if (!this.journalCapture('events', type)) return
+                this.journalEvents.push({ ts: Date.now(), svc, device: data.device, event: type, data: data.data, trace: this.makeBroadcastTrace(data.trace) })
+                this.scheduleJournalFlush()
+            })
+        }
+        this.ServiceContainer.on('device.port', (data: { device: string; data: string; trace: any; }) => {
+            if (!this.journalCapture('ports')) return
+            this.journalPorts.push({ ts: Date.now(), svc, device: data.device, port: data.data, data: this.makeBroadcastTrace(data.trace) })
+            this.scheduleJournalFlush()
+        })
+        this.ServiceContainer.on('device.metric', (data: { device: string; data: any; trace: any; }) => {
+            if (!this.journalCapture('metrics')) return
+            const value = data.trace && typeof data.trace === 'object' ? data.trace.value : data.trace
+            if (typeof value !== 'number' || !Number.isFinite(value)) return
+            this.journalMetrics.push({ ts: Date.now(), svc, device: data.device, metric: data.data, value })
+            this.scheduleJournalFlush()
+        })
+    }
+
+    /**
+     * Journal capture toggle check against the service meta (absent = capture
+     * everything).
+     */
+    protected journalCapture(kind: 'events' | 'ports' | 'metrics', channel?: string): boolean {
+        const j = this.ServiceMeta.journal
+        if (!j) return true
+        if (kind === 'events') {
+            if (j.events === false) return false
+            if (Array.isArray(j.events)) return j.events.includes(channel ?? '')
+            return true
+        }
+        if (kind === 'ports') return j.ports !== false
+        return j.metrics !== false
+    }
+
+    protected scheduleJournalFlush() {
+        if (this.journalTimer) return
+        this.journalTimer = setTimeout(() => this.flushJournal(), 250)
+        this.journalTimer.unref?.()
+    }
+
+    /**
+     * Send the accumulated journal batch to the master (fire-and-forget via
+     * the worker `send` port → WorkersManager.journal → Journal device).
+     */
+    protected flushJournal() {
+        if (this.journalTimer) {
+            clearTimeout(this.journalTimer)
+            this.journalTimer = null
+        }
+        if (!this.journalEvents.length && !this.journalPorts.length && !this.journalMetrics.length) return
+        const batch = {
+            command: 'journal',
+            events: this.journalEvents,
+            ports: this.journalPorts,
+            metrics: this.journalMetrics,
+        }
+        this.journalEvents = []
+        this.journalPorts = []
+        this.journalMetrics = []
+        try {
+            this.ports.output['send'].push(batch)
+        } catch (e) {
+            // A non-cloneable payload (function/circular) or a disconnecting
+            // worker: retry once with a JSON-sanitized batch, then drop —
+            // journaling is fail-soft by design.
+            try {
+                this.ports.output['send'].push(JSON.parse(JSON.stringify(batch)))
+            } catch (e2) { /* drop the batch */ }
         }
     }
 
@@ -828,6 +925,9 @@ export default class Serivce extends Device {
             this.notifyMainError(error)
         }
 
+        // Push the journal tail to the master before the worker disconnects
+        this.flushJournal()
+
         if (this.MainProcess) {
             try {
                 await this.MainProcess.stop()
@@ -835,6 +935,11 @@ export default class Serivce extends Device {
                 this.notifyMainError(e as Error)
             }
         }
+
+        // Device onStop hooks (run by MainProcess.stop above) emit new journal
+        // events (e.g. terminal in onStop) — flush them too, otherwise they sit
+        // in the 250ms batch timer and are lost when the worker exits below.
+        this.flushJournal()
 
         try {
             await this.Container.stopAll()

@@ -6,7 +6,7 @@ import fs from 'fs'
 import path from 'path'
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from "./interfaces/IServiceConfig";
-import IServiceMeta from "./interfaces/IServiceMeta";
+import IServiceMeta, { IServiceJournal } from "./interfaces/IServiceMeta";
 
 ErrorManager.register('ServiceManager', 'SM_SERVICE_NOT_FOUND',
   'Service of this id not found', {
@@ -148,6 +148,9 @@ export default class ServiceManager extends Device {
    * В этой очереди хранятся таймауты перегенерации
    * */  
   protected Queue = new Map<string, NodeJS.Timeout | undefined>()
+
+  /** fs.watch handles of the service directories (closed on onStop) */
+  protected watchers: fs.FSWatcher[] = []
 
   /**
    * Поля конфигурации сервиса для документации 
@@ -291,6 +294,44 @@ export default class ServiceManager extends Device {
     await this.apiServiceListUpdate() // Обновляем список сервисов 
     this.servicesWatch()  // Начинаем отслеживание сервисных директорий
     if (this.options.autoStart) this.servicesStart() // Запуск сервисов который должны быть запущены со старта
+  }
+
+  /**
+   * Остановка контейнера (Container.stopAll): останавливаем все запущенные
+   * сервисы штатным каскадом apiServiceStop — воркер сам сбрасывает журнал
+   * и гасит свой контейнер. Best-effort: ошибка остановки одного сервиса
+   * не должна блокировать остановку остальных.
+   *
+   * Порядок stopAll (обратный порядку старта) гарантирует, что этот хук
+   * отрабатывает раньше Journal.onStop — финальные батчи сервисов попадают
+   * в еще открытые таблицы журнала.
+   */
+  async onStopAsync(): Promise<void> {
+    for (const id of Object.keys(this.servicesWorker)) {
+      try {
+        await this.apiServiceStop({ service: id })
+      } catch (error) {
+        this.error(`Failed to stop service ${id} during shutdown`, error as Error)
+      }
+    }
+  }
+
+  /**
+   * Освобождение хост-ресурсов устройства (перед onStopAsync): закрываем
+   * файловые watch-еры сервисных директорий (иначе они держат event loop
+   * живым после stopAll и виснут при рестарте устройства) и снимаем
+   * подвешенные таймеры — debounce генерации сервисов (Queue) и таймеры
+   * автоперезапуска (servicesTimer).
+   */
+  onStop(): void {
+    for (const watcher of this.watchers) watcher.close()
+    this.watchers = []
+    for (const timer of this.Queue.values()) if (timer) clearTimeout(timer)
+    this.Queue.clear()
+    for (const id of Object.keys(this.servicesTimer)) {
+      if (this.servicesTimer[id] !== undefined) clearTimeout(this.servicesTimer[id])
+      this.servicesTimer[id] = undefined
+    }
   }
 
   /**
@@ -450,7 +491,7 @@ export default class ServiceManager extends Device {
     killer.unref?.()
     try {
       // Грациозная фаза: воркер сам останавливает свой контейнер устройств
-      // (onStop/onStopAsync хуки, журнал фиксируется в ServiceLogger.onStopAsync) и завершает поток.
+      // (onStop/onStopAsync хуки, журнал сбрасывается в Service.shutdown/onStop) и завершает поток.
       // Штатный исход — WM_WORKER_EXIT: pending-запрос отклоняется обработчиком exit события
       await this.inputSubmaster(this.makeServiceRequest('serviceStop', { service: conf.id }))
     } catch (error) {
@@ -541,6 +582,42 @@ export default class ServiceManager extends Device {
   }
 
   /**
+   * Set the journal capture config of a service: persist it in the meta file
+   * and apply it live to a running worker (internal serviceJournalSet).
+   *
+   * @param service Service ID
+   * @param journal Capture config (null = default: capture everything)
+   * @see IServiceJournal
+  */
+  async setJournal(service: string, journal: IServiceJournal | null) {
+    const conf = this.getService(service)
+    const meta = this.getMeta(service)
+
+    if (journal === null || journal === undefined) delete meta.journal
+    else meta.journal = journal
+    this.servicesMeta[service] = meta
+
+    try {
+      const raw = ImportManager.isFile(conf.metaPath) ? ImportManager.importJSON(conf.metaPath) : {}
+      if (journal === null || journal === undefined) delete raw.journal
+      else raw.journal = journal
+      fs.writeFileSync(conf.metaPath, JSON.stringify(raw, null, '\t'))
+    } catch (error) {
+      this.error('Error save service meta journal', error as Error)
+    }
+
+    if (conf.run && this.servicesWorker[service]) {
+      try {
+        await this.inputSubmaster(this.makeServiceRequest('serviceJournalSet', { service, journal: journal ?? null }))
+      } catch (error) {
+        this.error('Error live-apply service journal', error as Error)
+      }
+    }
+
+    return { journal: meta.journal ?? null }
+  }
+
+  /**
    * Update service list
    * 
    * return service list
@@ -581,7 +658,7 @@ export default class ServiceManager extends Device {
     // Начинаем перебор сервисных директорий
     for (const dirConf of this.options.servicesDirs as Array<{ dir: string, generate: boolean }>) {
       if (!dirConf.generate) continue // Если генерация для директории отключена
-      fs.watch(path.join(dirConf.dir), { encoding: 'utf8' }, (eventType, filename) => {
+      this.watchers.push(fs.watch(path.join(dirConf.dir), { encoding: 'utf8' }, (eventType, filename) => {
         if (!filename) return
         if (eventType !== 'change') return
         const res = filename.split('.')
@@ -604,7 +681,7 @@ export default class ServiceManager extends Device {
             if (error instanceof Error) this.error('Error generate service file', error)
           }
         }, 500))
-      })
+      }))
     }
   }
 

@@ -71,6 +71,16 @@ class Serivce extends vrack2_core_1.Device {
          * Пулл для хранения таймаутов захвата порта устройства
         */
         this.capturePull = new Map();
+        /**
+         * Journal batches waiting to be forwarded to the master Journal device
+         */
+        this.journalEvents = [];
+        this.journalPorts = [];
+        this.journalMetrics = [];
+        /**
+         * Journal flush timer (250ms batching window)
+         */
+        this.journalTimer = null;
     }
     description() {
         return `Устройство Serivce управляет контейнером сервиса, обеспечивая его запуск, мониторинг и управление. 
@@ -98,11 +108,11 @@ class Serivce extends vrack2_core_1.Device {
     }
     metrics() {
         return {
-            'memory.rss': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory rss'),
-            'memory.heaptotal': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapTotal'),
-            'memory.heapused': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapUsed'),
-            'memory.external': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory external'),
-            'memory.arraybuffers': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory arrayBuffers'),
+            'memory.rss': vrack2_core_1.Metric.one().descriptions('System memory rss'),
+            'memory.heaptotal': vrack2_core_1.Metric.one().descriptions('System memory heapTotal'),
+            'memory.heapused': vrack2_core_1.Metric.one().descriptions('System memory heapUsed'),
+            'memory.external': vrack2_core_1.Metric.one().descriptions('System memory external'),
+            'memory.arraybuffers': vrack2_core_1.Metric.one().descriptions('System memory arrayBuffers'),
         };
     }
     onStart() {
@@ -290,29 +300,15 @@ class Serivce extends vrack2_core_1.Device {
             return: vrack2_core_1.Rule.object().description('compact:true — { [deviceId]: { type, ports: [{ port, direct, description }], outputs: { [port]: [{ device, port }] }, inputs: { [port]: [{ device, port }] } } }; compact:false — full container structure (see IContainerStructure)')
         });
         this.ports.output['register.command'].push({
-            command: 'serviceDeviceMetric',
-            description: 'Getting a service device metrics',
-            level: 3,
+            command: 'serviceJournalSet',
+            description: 'Internal live toggle of the service journal capture (meta.journal applied without restart)',
+            level: 0,
             owner: this.type,
-            icon: 'graph-up',
-            handler: this.apiServiceDeviceMetric.bind(this),
+            handler: this.apiServiceJournalSet.bind(this),
             rules: {
                 service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
-                metric: vrack2_core_1.Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
-                period: vrack2_core_1.Rule.string().maxLength(120).required().example('now-1h:now').description('VRackDB period'),
-                precision: vrack2_core_1.Rule.string().maxLength(60).required().example('30s').description('VRackDB precision'),
-                func: vrack2_core_1.Rule.string().default('last').maxLength(10).example('last').description('Read function (last,first,min,max,avg,sum)')
+                journal: vrack2_core_1.Rule.any().default(null).description('Journal capture config (null = default: capture everything)'),
             },
-            return: vrack2_core_1.Rule.object().fields({
-                relevant: vrack2_core_1.Rule.boolean().default(false).example(false).description('result relevance flag'),
-                start: vrack2_core_1.Rule.number().integer().example(1).description('Beginning of the period'),
-                end: vrack2_core_1.Rule.number().integer().example(100).description('End of period '),
-                rows: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
-                    time: vrack2_core_1.Rule.number().integer().example(10).description('Time in MTU'),
-                    value: vrack2_core_1.Rule.number().example(12.3223).description('Metric value || null')
-                }).description('Metric storage object')).description('Array of metrics')
-            }).description('Metric request result - see vrack-db read documentation')
         });
         this.ports.output['register.command'].push({
             command: 'serviceMetric',
@@ -374,6 +370,10 @@ class Serivce extends vrack2_core_1.Device {
     onStop() {
         if (this.memTimer)
             clearInterval(this.memTimer);
+        if (this.journalTimer) {
+            clearTimeout(this.journalTimer);
+            this.journalTimer = null;
+        }
     }
     /**                 API SERVICE METHODS                 **/
     /**
@@ -434,16 +434,16 @@ class Serivce extends vrack2_core_1.Device {
     apiServiceStartSafe(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             const MainProcessEx = yield this.createMainProcess(data.info, data.meta, true);
-            // Сначала «собрать» контейнер: загрузить boot-классы и устройства.
-            // ServiceLogger.getBootClass требует, чтобы Bootstrap.loaded уже был заполнен
-            // (loadBootList живёт в check()), иначе журнал сервисов молча теряется.
+            // Сначала «собрать» контейнер: загрузить boot-классы и устройства
+            // (loadBootList живёт в check()).
             // run() идемпотентен: повторный check() + runStart() безопасны.
             yield MainProcessEx.check();
             // Пробрасываем контейнер и мета до runStart(),
-            // чтобы внешнее устройство (ServiceLogger) успело подписаться на события запуска
+            // чтобы подписчики успели подключиться к событиям запуска
             this.ports.output['container'].push({ container: this.ServiceContainer, meta: data.meta });
             this.bindRenderEvent();
             this.bindTerminate();
+            this.bindJournal();
             MainProcessEx.run();
             this.bindContainerDeviceEvents();
         });
@@ -626,19 +626,23 @@ class Serivce extends vrack2_core_1.Device {
         return DM.read(data.device, data.metric, data.period, data.precision);
     }
     /**
-     * Getting device metric
-     */
-    apiServiceDeviceMetric(data, gData) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.readDeviceMetric(this.ServiceContainer, data);
-        });
-    }
-    /**
      * Getting service metric (worker container, VRack2 level)
      */
     apiServiceMetric(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
             return this.readDeviceMetric(this.Container, data);
+        });
+    }
+    /**
+     * Live apply of the journal capture config (serviceLogSet → ServiceManager
+     * → this internal command). Capture checks meta at event time, so the new
+     * config takes effect on the very next event.
+     */
+    apiServiceJournalSet(data, gData) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            this.ServiceMeta.journal = (data.journal === null || data.journal === undefined) ? undefined : data.journal;
+            return { journal: (_a = this.ServiceMeta.journal) !== null && _a !== void 0 ? _a : null };
         });
     }
     /**
@@ -660,6 +664,15 @@ class Serivce extends vrack2_core_1.Device {
     createMainProcess(info, meta, start) {
         return __awaiter(this, void 0, void 0, function* () {
             const service = this.normalizeServiceBootstrap(vrack2_core_1.ImportManager.importJSON(info.filePath));
+            // Unified VRack2-level journal: the per-service journal boot classes
+            // (port_log / metrics stores) are disabled — events, port pushes and
+            // metrics are forwarded to the master Journal device instead (see
+            // bindJournal / flushJournal). A `null` entry removes the id from the
+            // merged bootlist (Bootstrap.mergeBootList).
+            if (!service.bootstrap)
+                service.bootstrap = {};
+            service.bootstrap.PortLogger = null;
+            service.bootstrap.DeviceMetrics = null;
             const MainProcessClass = yield vrack2_core_1.ImportManager.importClass(this.options.mainProcessPath);
             const MainProcessEx = new MainProcessClass(Object.assign({ id: info.id, service }, (start ? { confFile: info.configPath } : {})));
             MainProcessEx.Container.parent = this.Container;
@@ -696,6 +709,100 @@ class Serivce extends vrack2_core_1.Device {
             this.ServiceContainer.on(channel, (data, args) => {
                 this.broadcast(this.makeBroadcastChannel(data.device, this.eventsChannels[channel]), { message: data.data, trace: this.makeBroadcastTrace(data.trace), args });
             });
+        }
+    }
+    /**                 JOURNAL FORWARDING                 **/
+    /**
+     * Subscribe to the service container events (device channels, port
+     * pushes, metrics) and forward them in batches to the master Journal
+     * device. Capture toggles (meta.journal) are checked at event time, so
+     * serviceLogSet applies live.
+     */
+    bindJournal() {
+        const svc = this.Serviceinfo.id;
+        const channels = Object.assign(Object.assign({}, this.eventsChannels), { 'device.terminate': 'terminate' });
+        for (const channel in channels) {
+            const type = channels[channel];
+            this.ServiceContainer.on(channel, (data) => {
+                if (!this.journalCapture('events', type))
+                    return;
+                this.journalEvents.push({ ts: Date.now(), svc, device: data.device, event: type, data: data.data, trace: this.makeBroadcastTrace(data.trace) });
+                this.scheduleJournalFlush();
+            });
+        }
+        this.ServiceContainer.on('device.port', (data) => {
+            if (!this.journalCapture('ports'))
+                return;
+            this.journalPorts.push({ ts: Date.now(), svc, device: data.device, port: data.data, data: this.makeBroadcastTrace(data.trace) });
+            this.scheduleJournalFlush();
+        });
+        this.ServiceContainer.on('device.metric', (data) => {
+            if (!this.journalCapture('metrics'))
+                return;
+            const value = data.trace && typeof data.trace === 'object' ? data.trace.value : data.trace;
+            if (typeof value !== 'number' || !Number.isFinite(value))
+                return;
+            this.journalMetrics.push({ ts: Date.now(), svc, device: data.device, metric: data.data, value });
+            this.scheduleJournalFlush();
+        });
+    }
+    /**
+     * Journal capture toggle check against the service meta (absent = capture
+     * everything).
+     */
+    journalCapture(kind, channel) {
+        const j = this.ServiceMeta.journal;
+        if (!j)
+            return true;
+        if (kind === 'events') {
+            if (j.events === false)
+                return false;
+            if (Array.isArray(j.events))
+                return j.events.includes(channel !== null && channel !== void 0 ? channel : '');
+            return true;
+        }
+        if (kind === 'ports')
+            return j.ports !== false;
+        return j.metrics !== false;
+    }
+    scheduleJournalFlush() {
+        var _a, _b;
+        if (this.journalTimer)
+            return;
+        this.journalTimer = setTimeout(() => this.flushJournal(), 250);
+        (_b = (_a = this.journalTimer).unref) === null || _b === void 0 ? void 0 : _b.call(_a);
+    }
+    /**
+     * Send the accumulated journal batch to the master (fire-and-forget via
+     * the worker `send` port → WorkersManager.journal → Journal device).
+     */
+    flushJournal() {
+        if (this.journalTimer) {
+            clearTimeout(this.journalTimer);
+            this.journalTimer = null;
+        }
+        if (!this.journalEvents.length && !this.journalPorts.length && !this.journalMetrics.length)
+            return;
+        const batch = {
+            command: 'journal',
+            events: this.journalEvents,
+            ports: this.journalPorts,
+            metrics: this.journalMetrics,
+        };
+        this.journalEvents = [];
+        this.journalPorts = [];
+        this.journalMetrics = [];
+        try {
+            this.ports.output['send'].push(batch);
+        }
+        catch (e) {
+            // A non-cloneable payload (function/circular) or a disconnecting
+            // worker: retry once with a JSON-sanitized batch, then drop —
+            // journaling is fail-soft by design.
+            try {
+                this.ports.output['send'].push(JSON.parse(JSON.stringify(batch)));
+            }
+            catch (e2) { /* drop the batch */ }
         }
     }
     /**
@@ -788,6 +895,8 @@ class Serivce extends vrack2_core_1.Device {
             if (error) {
                 this.notifyMainError(error);
             }
+            // Push the journal tail to the master before the worker disconnects
+            this.flushJournal();
             if (this.MainProcess) {
                 try {
                     yield this.MainProcess.stop();
@@ -796,6 +905,10 @@ class Serivce extends vrack2_core_1.Device {
                     this.notifyMainError(e);
                 }
             }
+            // Device onStop hooks (run by MainProcess.stop above) emit new journal
+            // events (e.g. terminal in onStop) — flush them too, otherwise they sit
+            // in the 250ms batch timer and are lost when the worker exits below.
+            this.flushJournal();
             try {
                 yield this.Container.stopAll();
             }

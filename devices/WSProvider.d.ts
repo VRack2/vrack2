@@ -1,4 +1,4 @@
-import { BasicMetric, Device } from "vrack2-core";
+import { Device, MetricOne } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 import WebSocket from "ws";
@@ -15,7 +15,7 @@ export default class WSProvider extends Device {
         [key: string]: BasicType;
     };
     metrics(): {
-        [key: string]: BasicMetric;
+        [key: string]: MetricOne;
     };
     /**
      * Client index
@@ -40,7 +40,22 @@ export default class WSProvider extends Device {
         receive: number;
         send: number;
     };
+    /** WebSocket server instance (closed on onStop) */
+    protected wss?: WebSocket.Server;
+    /** Heartbeat ping interval handle (cleared on onStop) */
+    protected pingTimer?: NodeJS.Timeout;
+    /** Byte metrics interval handle (cleared on onStop) */
+    protected metricTimer?: NodeJS.Timeout;
     onStart(): void;
+    /**
+     * Release every host resource owned by this device: stop the intervals,
+     * terminate connected clients (their 'close' handlers emit unregister while
+     * Guard/ProvidersClients are still running — WSProvider is stopped after
+     * them in Container.stopAll reverse order) and close the listening server.
+     * Without this the port stays bound and the intervals keep the event loop
+     * alive, so a restart of the device fails with EADDRINUSE.
+     */
+    onStop(): void;
     /**
      * Create websocket server
      *

@@ -67,7 +67,8 @@ export default class WorkersManager extends Device {
     outputs(): { [key: string]: BasicPort; } {
         return {
             'master.command': Port.return(),
-            'broadcast': Port.standard()
+            'broadcast': Port.standard(),
+            'journal': Port.standard().description('Journal batches from service workers (to the Journal device)')
         }
     }
 
@@ -111,6 +112,20 @@ export default class WorkersManager extends Device {
     }
 
     /**
+     * Safety net on container stop: terminate every worker still alive.
+     *
+     * No race with ServiceManager: Container.stopAll stops devices in reverse
+     * start order and awaits each stop, so ServiceManager.onStopAsync has
+     * already stopped (and awaited the exit of) every service worker before
+     * this hook runs. What remains here are only orphaned non-service workers
+     * (e.g. DeviceInfo deviceProcess workers). The 'exit' handlers clean the
+     * maps and reject queued requests as usual.
+     */
+    onStop(): void {
+        for (const worker of this.workers.values()) worker.terminate()
+    }
+
+    /**
      * Creating a Worker - VRack2 service.
      * 
      * Сreates a vorker and passes to it the data required for operation. 
@@ -137,6 +152,7 @@ export default class WorkersManager extends Device {
             nWorker.on('message', (mData: IWorkerMessage)=>{
                 if (mData.internal) return this.internal(id, mData)
                 if (mData.command === 'broadcast') return this.ports.output['broadcast'].push(mData)
+                if (mData.command === 'journal') return this.ports.output['journal'].push(mData)
                 if (mData.command === 'error') { 
                     data.onError(ErrorManager.make('WM_INTERNAL_ERROR').add(mData.error as Error))
                     return

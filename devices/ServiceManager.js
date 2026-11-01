@@ -83,6 +83,8 @@ class ServiceManager extends vrack2_core_1.Device {
          * В этой очереди хранятся таймауты перегенерации
          * */
         this.Queue = new Map();
+        /** fs.watch handles of the service directories (closed on onStop) */
+        this.watchers = [];
         /**
          * Поля конфигурации сервиса для документации
         */
@@ -257,6 +259,49 @@ class ServiceManager extends vrack2_core_1.Device {
         });
     }
     /**
+     * Остановка контейнера (Container.stopAll): останавливаем все запущенные
+     * сервисы штатным каскадом apiServiceStop — воркер сам сбрасывает журнал
+     * и гасит свой контейнер. Best-effort: ошибка остановки одного сервиса
+     * не должна блокировать остановку остальных.
+     *
+     * Порядок stopAll (обратный порядку старта) гарантирует, что этот хук
+     * отрабатывает раньше Journal.onStop — финальные батчи сервисов попадают
+     * в еще открытые таблицы журнала.
+     */
+    onStopAsync() {
+        return __awaiter(this, void 0, void 0, function* () {
+            for (const id of Object.keys(this.servicesWorker)) {
+                try {
+                    yield this.apiServiceStop({ service: id });
+                }
+                catch (error) {
+                    this.error(`Failed to stop service ${id} during shutdown`, error);
+                }
+            }
+        });
+    }
+    /**
+     * Освобождение хост-ресурсов устройства (перед onStopAsync): закрываем
+     * файловые watch-еры сервисных директорий (иначе они держат event loop
+     * живым после stopAll и виснут при рестарте устройства) и снимаем
+     * подвешенные таймеры — debounce генерации сервисов (Queue) и таймеры
+     * автоперезапуска (servicesTimer).
+     */
+    onStop() {
+        for (const watcher of this.watchers)
+            watcher.close();
+        this.watchers = [];
+        for (const timer of this.Queue.values())
+            if (timer)
+                clearTimeout(timer);
+        this.Queue.clear();
+        for (const id of Object.keys(this.servicesTimer)) {
+            if (this.servicesTimer[id] !== undefined)
+                clearTimeout(this.servicesTimer[id]);
+            this.servicesTimer[id] = undefined;
+        }
+    }
+    /**
      * Return a general service info
      *
      * @see IServiceConfig
@@ -425,7 +470,7 @@ class ServiceManager extends vrack2_core_1.Device {
             (_a = killer.unref) === null || _a === void 0 ? void 0 : _a.call(killer);
             try {
                 // Грациозная фаза: воркер сам останавливает свой контейнер устройств
-                // (onStop/onStopAsync хуки, журнал фиксируется в ServiceLogger.onStopAsync) и завершает поток.
+                // (onStop/onStopAsync хуки, журнал сбрасывается в Service.shutdown/onStop) и завершает поток.
                 // Штатный исход — WM_WORKER_EXIT: pending-запрос отклоняется обработчиком exit события
                 yield this.inputSubmaster(this.makeServiceRequest('serviceStop', { service: conf.id }));
             }
@@ -521,6 +566,46 @@ class ServiceManager extends vrack2_core_1.Device {
         });
     }
     /**
+     * Set the journal capture config of a service: persist it in the meta file
+     * and apply it live to a running worker (internal serviceJournalSet).
+     *
+     * @param service Service ID
+     * @param journal Capture config (null = default: capture everything)
+     * @see IServiceJournal
+    */
+    setJournal(service, journal) {
+        return __awaiter(this, void 0, void 0, function* () {
+            var _a;
+            const conf = this.getService(service);
+            const meta = this.getMeta(service);
+            if (journal === null || journal === undefined)
+                delete meta.journal;
+            else
+                meta.journal = journal;
+            this.servicesMeta[service] = meta;
+            try {
+                const raw = vrack2_core_1.ImportManager.isFile(conf.metaPath) ? vrack2_core_1.ImportManager.importJSON(conf.metaPath) : {};
+                if (journal === null || journal === undefined)
+                    delete raw.journal;
+                else
+                    raw.journal = journal;
+                fs_1.default.writeFileSync(conf.metaPath, JSON.stringify(raw, null, '\t'));
+            }
+            catch (error) {
+                this.error('Error save service meta journal', error);
+            }
+            if (conf.run && this.servicesWorker[service]) {
+                try {
+                    yield this.inputSubmaster(this.makeServiceRequest('serviceJournalSet', { service, journal: journal !== null && journal !== void 0 ? journal : null }));
+                }
+                catch (error) {
+                    this.error('Error live-apply service journal', error);
+                }
+            }
+            return { journal: (_a = meta.journal) !== null && _a !== void 0 ? _a : null };
+        });
+    }
+    /**
      * Update service list
      *
      * return service list
@@ -569,7 +654,7 @@ class ServiceManager extends vrack2_core_1.Device {
         for (const dirConf of this.options.servicesDirs) {
             if (!dirConf.generate)
                 continue; // Если генерация для директории отключена
-            fs_1.default.watch(path_1.default.join(dirConf.dir), { encoding: 'utf8' }, (eventType, filename) => {
+            this.watchers.push(fs_1.default.watch(path_1.default.join(dirConf.dir), { encoding: 'utf8' }, (eventType, filename) => {
                 if (!filename)
                     return;
                 if (eventType !== 'change')
@@ -599,7 +684,7 @@ class ServiceManager extends vrack2_core_1.Device {
                             this.error('Error generate service file', error);
                     }
                 }), 500));
-            });
+            }));
         }
     }
     /**

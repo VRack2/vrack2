@@ -26,16 +26,23 @@ class System extends vrack2_core_1.Device {
             'register.command': vrack2_core_1.Port.standard().description('Register command into master'),
         };
     }
+    checkOptions() {
+        return {
+            shutdownTimeout: vrack2_core_1.Rule.number().integer().min(1000).default(15000).required()
+                .description('Graceful shutdown watchdog (ms): if Container.stopAll/destroyAll does not finish in time, force-exit'),
+        };
+    }
     metrics() {
         return {
-            'memory.rss': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory rss'),
-            'memory.heaptotal': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapTotal'),
-            'memory.heapused': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapUsed'),
-            'memory.external': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory external'),
-            'memory.arraybuffers': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory arrayBuffers'),
+            'memory.rss': vrack2_core_1.Metric.one().descriptions('System memory rss'),
+            'memory.heaptotal': vrack2_core_1.Metric.one().descriptions('System memory heapTotal'),
+            'memory.heapused': vrack2_core_1.Metric.one().descriptions('System memory heapUsed'),
+            'memory.external': vrack2_core_1.Metric.one().descriptions('System memory external'),
+            'memory.arraybuffers': vrack2_core_1.Metric.one().descriptions('System memory arrayBuffers'),
         };
     }
     onStart() {
+        this.bindShutdown();
         this.ports.output['register.command'].push({
             command: 'structureGet',
             short: 'Get structure',
@@ -122,7 +129,7 @@ class System extends vrack2_core_1.Device {
                 network: vrack2_core_1.Rule.object().description('Network interfaces information - see os.networkInterfaces()')
             }).description('Device info object')
         });
-        setInterval(() => {
+        this.memTimer = setInterval(() => {
             const mem = process_1.default.memoryUsage();
             this.metric('memory.rss', Math.round(mem.rss / 1024 / 1024));
             this.metric('memory.heaptotal', Math.round(mem.heapTotal / 1024 / 1024));
@@ -130,6 +137,65 @@ class System extends vrack2_core_1.Device {
             this.metric('memory.external', Math.round(mem.external / 1024 / 1024));
             this.metric('memory.arraybuffers', Math.round(mem.arrayBuffers / 1024 / 1024));
         }, 5000);
+    }
+    /**
+     * Release the memory-metrics interval owned by this device. Without this the
+     * interval keeps the event loop alive after Container.stopAll(), so the
+     * process only exits because the shutdown chain calls process.exit()
+     * explicitly, and restarting the device stacks a second interval.
+     */
+    onStop() {
+        if (this.memTimer) {
+            clearInterval(this.memTimer);
+            this.memTimer = undefined;
+        }
+    }
+    /**
+     * Graceful shutdown of the master container on SIGINT/SIGTERM.
+     *
+     * The framework does not manage the host process lifecycle, so this device
+     * (the platform's own System device) owns it: on a termination signal it
+     * runs the canonical teardown — `Container.stopAll()` (devices stopped in
+     * reverse start order: ServiceManager.onStopAsync stops every service, so
+     * their final journal batches reach the still-open Journal tables; Journal
+     * is started first and therefore stopped last, flushing its segments) then
+     * `Bootstrap.destroyAll()` (boot-class stores closed) — and only then exits
+     * the process.
+     *
+     * Idempotent latch: the journal-db Shutdown hook re-raises the same signal
+     * synchronously after draining the WAL; that re-entrant call is ignored. A
+     * genuine second signal (a real second Ctrl+C, > 1s later) force-exits.
+     */
+    bindShutdown() {
+        let stoppingAt = 0;
+        const handler = (signal) => {
+            var _a;
+            if (stoppingAt) {
+                // Re-entrant re-raise from the journal-db hook (same tick) — ignore.
+                // A real second signal (user pressed Ctrl+C again) — force exit.
+                if (Date.now() - stoppingAt > 1000)
+                    process_1.default.exit(1);
+                return;
+            }
+            stoppingAt = Date.now();
+            this.terminal(`Received ${signal} — shutting down container`, {});
+            // Watchdog: if teardown hangs (a device onStopAsync never resolves),
+            // force-exit. unref so it doesn't hold the loop when teardown is fast.
+            const watchdog = setTimeout(() => {
+                this.error('Graceful shutdown timed out — force exit', {});
+                process_1.default.exit(1);
+            }, this.options.shutdownTimeout);
+            (_a = watchdog.unref) === null || _a === void 0 ? void 0 : _a.call(watchdog);
+            let hadError = false;
+            Promise.resolve()
+                .then(() => this.Container.stopAll())
+                .catch((e) => { hadError = true; this.error('Container.stopAll failed during shutdown', e); })
+                .then(() => this.Container.Bootstrap.destroyAll())
+                .catch((e) => { hadError = true; this.error('Bootstrap.destroyAll failed during shutdown', e); })
+                .then(() => { clearTimeout(watchdog); process_1.default.exit(hadError ? 1 : 0); });
+        };
+        process_1.default.on('SIGINT', () => handler('SIGINT'));
+        process_1.default.on('SIGTERM', () => handler('SIGTERM'));
     }
     /**
      * Getting the service structure

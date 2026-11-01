@@ -66,7 +66,8 @@ class WorkersManager extends vrack2_core_1.Device {
     outputs() {
         return {
             'master.command': vrack2_core_1.Port.return(),
-            'broadcast': vrack2_core_1.Port.standard()
+            'broadcast': vrack2_core_1.Port.standard(),
+            'journal': vrack2_core_1.Port.standard().description('Journal batches from service workers (to the Journal device)')
         };
     }
     checkOptions() {
@@ -81,6 +82,20 @@ class WorkersManager extends vrack2_core_1.Device {
             this.addInputHandler(`worker${i}.stop`, this.inputWorkerStop.bind(this));
             this.addInputHandler(`worker${i}.request`, this.inputWorkerRequest.bind(this));
         }
+    }
+    /**
+     * Safety net on container stop: terminate every worker still alive.
+     *
+     * No race with ServiceManager: Container.stopAll stops devices in reverse
+     * start order and awaits each stop, so ServiceManager.onStopAsync has
+     * already stopped (and awaited the exit of) every service worker before
+     * this hook runs. What remains here are only orphaned non-service workers
+     * (e.g. DeviceInfo deviceProcess workers). The 'exit' handlers clean the
+     * maps and reject queued requests as usual.
+     */
+    onStop() {
+        for (const worker of this.workers.values())
+            worker.terminate();
     }
     /**
      * Creating a Worker - VRack2 service.
@@ -111,6 +126,8 @@ class WorkersManager extends vrack2_core_1.Device {
                     return this.internal(id, mData);
                 if (mData.command === 'broadcast')
                     return this.ports.output['broadcast'].push(mData);
+                if (mData.command === 'journal')
+                    return this.ports.output['journal'].push(mData);
                 if (mData.command === 'error') {
                     data.onError(vrack2_core_1.ErrorManager.make('WM_INTERNAL_ERROR').add(mData.error));
                     return;

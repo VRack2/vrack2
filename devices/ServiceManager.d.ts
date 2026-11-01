@@ -1,9 +1,10 @@
 import { Device } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
+import fs from 'fs';
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from "./interfaces/IServiceConfig";
-import IServiceMeta from "./interfaces/IServiceMeta";
+import IServiceMeta, { IServiceJournal } from "./interfaces/IServiceMeta";
 export default class ServiceManager extends Device {
     description(): string;
     outputs(): {
@@ -73,12 +74,33 @@ export default class ServiceManager extends Device {
      * В этой очереди хранятся таймауты перегенерации
      * */
     protected Queue: Map<string, NodeJS.Timeout | undefined>;
+    /** fs.watch handles of the service directories (closed on onStop) */
+    protected watchers: fs.FSWatcher[];
     /**
      * Поля конфигурации сервиса для документации
     */
     protected ServiceRule: import("vrack2-core/lib/validator/types/ObjectType").default;
     onStart(): void;
     onStartAsync(): Promise<void>;
+    /**
+     * Остановка контейнера (Container.stopAll): останавливаем все запущенные
+     * сервисы штатным каскадом apiServiceStop — воркер сам сбрасывает журнал
+     * и гасит свой контейнер. Best-effort: ошибка остановки одного сервиса
+     * не должна блокировать остановку остальных.
+     *
+     * Порядок stopAll (обратный порядку старта) гарантирует, что этот хук
+     * отрабатывает раньше Journal.onStop — финальные батчи сервисов попадают
+     * в еще открытые таблицы журнала.
+     */
+    onStopAsync(): Promise<void>;
+    /**
+     * Освобождение хост-ресурсов устройства (перед onStopAsync): закрываем
+     * файловые watch-еры сервисных директорий (иначе они держат event loop
+     * живым после stopAll и виснут при рестарте устройства) и снимаем
+     * подвешенные таймеры — debounce генерации сервисов (Queue) и таймеры
+     * автоперезапуска (servicesTimer).
+     */
+    onStop(): void;
     /**
      * Return a general service info
      *
@@ -159,6 +181,17 @@ export default class ServiceManager extends Device {
     apiServiceErrorsClear(data: {
         service: string;
     }): Promise<{}>;
+    /**
+     * Set the journal capture config of a service: persist it in the meta file
+     * and apply it live to a running worker (internal serviceJournalSet).
+     *
+     * @param service Service ID
+     * @param journal Capture config (null = default: capture everything)
+     * @see IServiceJournal
+    */
+    setJournal(service: string, journal: IServiceJournal | null): Promise<{
+        journal: IServiceJournal | null;
+    }>;
     /**
      * Update service list
      *

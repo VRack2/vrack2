@@ -1,4 +1,4 @@
-import { BasicMetric, Device, DeviceManager, JournalDbMetrics, Metric, Port, Rule, StructureStorage } from "vrack2-core";
+import { BasicType, Device, DeviceManager, JournalDbMetrics, Metric, MetricOne, Port, Rule, StructureStorage } from "vrack2-core";
 import { IContainerStructure } from "vrack2-core/lib/Container";
 import os from "os"
 import process from "process"
@@ -20,17 +20,29 @@ export default class System extends Device {
     }
   }
 
-  metrics(): { [key: string]: BasicMetric; } {
+  checkOptions(): { [key: string]: BasicType; } {
     return {
-      'memory.rss': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory rss'),
-      'memory.heaptotal': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapTotal'),
-      'memory.heapused': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapUsed'),
-      'memory.external': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory external'),
-      'memory.arraybuffers': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory arrayBuffers'),
+      shutdownTimeout: Rule.number().integer().min(1000).default(15000).required()
+        .description('Graceful shutdown watchdog (ms): if Container.stopAll/destroyAll does not finish in time, force-exit'),
     }
   }
 
+  metrics(): { [key: string]: MetricOne; } {
+    return {
+      'memory.rss': Metric.one().descriptions('System memory rss'),
+      'memory.heaptotal': Metric.one().descriptions('System memory heapTotal'),
+      'memory.heapused': Metric.one().descriptions('System memory heapUsed'),
+      'memory.external': Metric.one().descriptions('System memory external'),
+      'memory.arraybuffers': Metric.one().descriptions('System memory arrayBuffers'),
+    }
+  }
+
+  /** Memory-metrics interval handle (cleared on onStop) */
+  protected memTimer?: NodeJS.Timeout
+
   onStart(): void {
+    this.bindShutdown()
+
     this.ports.output['register.command'].push({
       command: 'structureGet',
       short: 'Get structure',
@@ -123,7 +135,7 @@ export default class System extends Device {
       }).description('Device info object')
     })
 
-    setInterval(() => {
+    this.memTimer = setInterval(() => {
       const mem = process.memoryUsage()
       this.metric('memory.rss', Math.round(mem.rss / 1024 / 1024))
       this.metric('memory.heaptotal', Math.round(mem.heapTotal / 1024 / 1024))
@@ -132,6 +144,62 @@ export default class System extends Device {
       this.metric('memory.arraybuffers', Math.round(mem.arrayBuffers / 1024 / 1024))
     }, 5000)
 
+  }
+
+  /**
+   * Release the memory-metrics interval owned by this device. Without this the
+   * interval keeps the event loop alive after Container.stopAll(), so the
+   * process only exits because the shutdown chain calls process.exit()
+   * explicitly, and restarting the device stacks a second interval.
+   */
+  onStop(): void {
+    if (this.memTimer) { clearInterval(this.memTimer); this.memTimer = undefined }
+  }
+
+  /**
+   * Graceful shutdown of the master container on SIGINT/SIGTERM.
+   *
+   * The framework does not manage the host process lifecycle, so this device
+   * (the platform's own System device) owns it: on a termination signal it
+   * runs the canonical teardown — `Container.stopAll()` (devices stopped in
+   * reverse start order: ServiceManager.onStopAsync stops every service, so
+   * their final journal batches reach the still-open Journal tables; Journal
+   * is started first and therefore stopped last, flushing its segments) then
+   * `Bootstrap.destroyAll()` (boot-class stores closed) — and only then exits
+   * the process.
+   *
+   * Idempotent latch: the journal-db Shutdown hook re-raises the same signal
+   * synchronously after draining the WAL; that re-entrant call is ignored. A
+   * genuine second signal (a real second Ctrl+C, > 1s later) force-exits.
+   */
+  protected bindShutdown(): void {
+    let stoppingAt = 0
+    const handler = (signal: string) => {
+      if (stoppingAt) {
+        // Re-entrant re-raise from the journal-db hook (same tick) — ignore.
+        // A real second signal (user pressed Ctrl+C again) — force exit.
+        if (Date.now() - stoppingAt > 1000) process.exit(1)
+        return
+      }
+      stoppingAt = Date.now()
+      this.terminal(`Received ${signal} — shutting down container`, {})
+      // Watchdog: if teardown hangs (a device onStopAsync never resolves),
+      // force-exit. unref so it doesn't hold the loop when teardown is fast.
+      const watchdog = setTimeout(() => {
+        this.error('Graceful shutdown timed out — force exit', {})
+        process.exit(1)
+      }, this.options.shutdownTimeout)
+      watchdog.unref?.()
+      let hadError = false
+      Promise.resolve()
+        .then(() => this.Container.stopAll())
+        .catch((e) => { hadError = true; this.error('Container.stopAll failed during shutdown', e as Error) })
+        .then(() => this.Container.Bootstrap.destroyAll())
+        .catch((e) => { hadError = true; this.error('Bootstrap.destroyAll failed during shutdown', e as Error) })
+        .then(() => { clearTimeout(watchdog); process.exit(hadError ? 1 : 0) })
+    }
+    process.on('SIGINT', () => handler('SIGINT'))
+    process.on('SIGTERM', () => handler('SIGTERM'))
   }
 
   /**

@@ -1,8 +1,19 @@
 {
     "bootstrap": {
-        "PortLogger": { "options": { "enabled": false } }
+        "PortLogger": { "path": "vrack2-core.PortLogger", "options": {} },
+        "ServiceLogger": { "path": "vrack2-core.ServiceLogger", "options": {} },
+        "DeviceMetrics": { "path": "vrack2-core.JournalDbMetrics", "options": {} }
     },
     "devices": [
+        {
+            "id": "Journal",
+            "type": "vrack2.Journal",
+            "options": { },
+            "connections": [
+                "Journal.register.command -> Master.register7",
+                "WorkersManager.journal -> Journal.journal"
+            ]
+        },
         {
             "id": "WSProvider",
             "type": "vrack2.WSProvider",
@@ -112,14 +123,6 @@
             "options": { },
             "connections": [
                 "Mcp.command -> Master.command3"
-            ]
-        },
-        {
-            "id": "ServiceJournal",
-            "type": "vrack2.ServiceJournal",
-            "options": { },
-            "connections": [
-                "ServiceJournal.register.command -> Master.register7"
             ]
         }
     ]

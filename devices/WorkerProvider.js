@@ -42,6 +42,27 @@ class WorkerProvider extends vrack2_core_1.Device {
         this.Container.on('service.ready', this.loaded.bind(this));
         vrack2_core_1.UniversalWorker.onMessage(this.inputCommand.bind(this));
         // parentPort?.on('message', this.inputCommand.bind(this))
+        this.bindSignals();
+    }
+    /**
+     * The worker process lifecycle is delegated to VRack2: the master stops a
+     * worker through the command channel (Service.shutdown), never by signal.
+     * A SIGINT/SIGTERM that reaches this process anyway — for example Ctrl+C in
+     * a terminal, because forked workers share the foreground process group —
+     * must be ignored: the journal-db Shutdown hook drains and re-raises the
+     * signal, and Node's default behavior would kill the worker before the
+     * master can stop it gracefully and flush its final journal batches.
+     */
+    bindSignals() {
+        let notified = false;
+        const ignore = (signal) => {
+            if (!notified) {
+                notified = true;
+                this.terminal(`Worker received ${signal}: shutdown is delegated to VRack2, ignoring`, {});
+            }
+        };
+        process.on('SIGINT', () => ignore('SIGINT'));
+        process.on('SIGTERM', () => ignore('SIGTERM'));
     }
     /**
      * Receiving and processing a command from the main VRack2 service

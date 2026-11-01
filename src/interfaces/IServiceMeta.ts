@@ -1,4 +1,17 @@
 /**
+ * Journal capture toggles for a service (unified VRack2-level journal).
+ * Absent = everything captured.
+*/
+export interface IServiceJournal {
+    /** Device event channels to capture: whitelist, or false = off. Absent = all. */
+    events?: Array<string> | false;
+    /** Capture outgoing port pushes. Absent = true. */
+    ports?: boolean;
+    /** Capture device metrics. Absent = true. */
+    metrics?: boolean;
+}
+
+/**
  * Service meta file structure
 */
 export default interface IServiceMeta {
@@ -18,4 +31,6 @@ export default interface IServiceMeta {
     isolated: boolean;
     /**  Список подписок на внутренние каналы */
     parentChannels?: Array<string>
+    /** Journal capture toggles (absent = capture everything) */
+    journal?: IServiceJournal
 }

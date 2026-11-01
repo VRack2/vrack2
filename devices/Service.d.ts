@@ -1,9 +1,9 @@
-import { Container, Device, MainProcess, BasicMetric } from "vrack2-core";
+import { Container, Device, MainProcess, MetricOne } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from './interfaces/IServiceConfig';
-import IServiceMeta from "./interfaces/IServiceMeta";
+import IServiceMeta, { IServiceJournal } from "./interfaces/IServiceMeta";
 import IDeviceActionRequest from "./interfaces/IDeviceActionRequest";
 import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 import IDevicePushRequest from "./interfaces/IDevicePushRequest";
@@ -19,7 +19,7 @@ export default class Serivce extends Device {
         [key: string]: BasicType;
     };
     metrics(): {
-        [key: string]: BasicMetric;
+        [key: string]: MetricOne;
     };
     /**
      * Devices events list
@@ -65,6 +65,16 @@ export default class Serivce extends Device {
      * Пулл для хранения таймаутов захвата порта устройства
     */
     capturePull: Map<any, any>;
+    /**
+     * Journal batches waiting to be forwarded to the master Journal device
+     */
+    journalEvents: Array<any>;
+    journalPorts: Array<any>;
+    journalMetrics: Array<any>;
+    /**
+     * Journal flush timer (250ms batching window)
+     */
+    journalTimer: NodeJS.Timeout | null;
     onStart(): void;
     onStop(): void;
     /**                 API SERVICE METHODS                 **/
@@ -229,13 +239,20 @@ export default class Serivce extends Device {
         }[];
     };
     /**
-     * Getting device metric
-     */
-    apiServiceDeviceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
-    /**
      * Getting service metric (worker container, VRack2 level)
      */
     apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
+    /**
+     * Live apply of the journal capture config (serviceLogSet → ServiceManager
+     * → this internal command). Capture checks meta at event time, so the new
+     * config takes effect on the very next event.
+     */
+    apiServiceJournalSet(data: {
+        service: string;
+        journal: any;
+    }, gData: IGuardMessage): Promise<{
+        journal: IServiceJournal | null;
+    }>;
     /**
      * Выполняет внутреннюю передачу события из основного родительского контейнера
      *
@@ -262,6 +279,25 @@ export default class Serivce extends Device {
      * @see eventsChannels device events list
     */
     protected bindContainerDeviceEvents(): void;
+    /**                 JOURNAL FORWARDING                 **/
+    /**
+     * Subscribe to the service container events (device channels, port
+     * pushes, metrics) and forward them in batches to the master Journal
+     * device. Capture toggles (meta.journal) are checked at event time, so
+     * serviceLogSet applies live.
+     */
+    protected bindJournal(): void;
+    /**
+     * Journal capture toggle check against the service meta (absent = capture
+     * everything).
+     */
+    protected journalCapture(kind: 'events' | 'ports' | 'metrics', channel?: string): boolean;
+    protected scheduleJournalFlush(): void;
+    /**
+     * Send the accumulated journal batch to the master (fire-and-forget via
+     * the worker `send` port → WorkersManager.journal → Journal device).
+     */
+    protected flushJournal(): void;
     /**
      * Bind render device event
      *
