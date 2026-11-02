@@ -4,7 +4,7 @@ import BasicType from "vrack2-core/lib/validator/types/BasicType";
 import fs from 'fs';
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from "./interfaces/IServiceConfig";
-import IServiceMeta, { IServiceJournal } from "./interfaces/IServiceMeta";
+import IServiceMeta, { IJournalToggles } from "./interfaces/IServiceMeta";
 export default class ServiceManager extends Device {
     description(): string;
     outputs(): {
@@ -182,15 +182,20 @@ export default class ServiceManager extends Device {
         service: string;
     }): Promise<{}>;
     /**
-     * Set the journal capture config of a service: persist it in the meta file
-     * and apply it live to a running worker (internal serviceJournalSet).
+     * Set the journal capture toggles of a service: persist them in the meta
+     * file as flat keys (journalEvents/journalMetrics/journalPorts) and apply
+     * them live to a running worker (internal serviceJournalSet).
      *
      * @param service Service ID
-     * @param journal Capture config (null = default: capture everything)
-     * @see IServiceJournal
+     * @param journal Capture toggles (null = reset to defaults: events/metrics on, ports off)
+     * @see IJournalToggles
     */
-    setJournal(service: string, journal: IServiceJournal | null): Promise<{
-        journal: IServiceJournal | null;
+    setJournal(service: string, journal: IJournalToggles | null): Promise<{
+        journal: {
+            events: boolean;
+            ports: boolean;
+            metrics: boolean;
+        };
     }>;
     /**
      * Update service list

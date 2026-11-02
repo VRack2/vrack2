@@ -6,7 +6,7 @@ import fs from 'fs'
 import path from 'path'
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from "./interfaces/IServiceConfig";
-import IServiceMeta, { IServiceJournal } from "./interfaces/IServiceMeta";
+import IServiceMeta, { IJournalToggles } from "./interfaces/IServiceMeta";
 
 ErrorManager.register('ServiceManager', 'SM_SERVICE_NOT_FOUND',
   'Service of this id not found', {
@@ -582,25 +582,39 @@ export default class ServiceManager extends Device {
   }
 
   /**
-   * Set the journal capture config of a service: persist it in the meta file
-   * and apply it live to a running worker (internal serviceJournalSet).
+   * Set the journal capture toggles of a service: persist them in the meta
+   * file as flat keys (journalEvents/journalMetrics/journalPorts) and apply
+   * them live to a running worker (internal serviceJournalSet).
    *
    * @param service Service ID
-   * @param journal Capture config (null = default: capture everything)
-   * @see IServiceJournal
+   * @param journal Capture toggles (null = reset to defaults: events/metrics on, ports off)
+   * @see IJournalToggles
   */
-  async setJournal(service: string, journal: IServiceJournal | null) {
+  async setJournal(service: string, journal: IJournalToggles | null) {
     const conf = this.getService(service)
     const meta = this.getMeta(service)
 
-    if (journal === null || journal === undefined) delete meta.journal
-    else meta.journal = journal
+    delete meta.journalEvents
+    delete meta.journalMetrics
+    delete meta.journalPorts
+    if (journal) {
+      if (journal.events !== undefined) meta.journalEvents = journal.events
+      if (journal.ports !== undefined) meta.journalPorts = journal.ports
+      if (journal.metrics !== undefined) meta.journalMetrics = journal.metrics
+    }
     this.servicesMeta[service] = meta
 
     try {
       const raw = ImportManager.isFile(conf.metaPath) ? ImportManager.importJSON(conf.metaPath) : {}
-      if (journal === null || journal === undefined) delete raw.journal
-      else raw.journal = journal
+      delete raw.journal
+      delete raw.journalEvents
+      delete raw.journalMetrics
+      delete raw.journalPorts
+      if (journal) {
+        if (journal.events !== undefined) raw.journalEvents = journal.events
+        if (journal.ports !== undefined) raw.journalPorts = journal.ports
+        if (journal.metrics !== undefined) raw.journalMetrics = journal.metrics
+      }
       fs.writeFileSync(conf.metaPath, JSON.stringify(raw, null, '\t'))
     } catch (error) {
       this.error('Error save service meta journal', error as Error)
@@ -614,7 +628,11 @@ export default class ServiceManager extends Device {
       }
     }
 
-    return { journal: meta.journal ?? null }
+    return { journal: {
+      events: meta.journalEvents !== false,
+      ports: meta.journalPorts === true,
+      metrics: meta.journalMetrics !== false,
+    } }
   }
 
   /**

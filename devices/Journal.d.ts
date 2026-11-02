@@ -4,7 +4,7 @@ import BasicType from "vrack2-core/lib/validator/types/BasicType";
 import { Store, Table } from 'vrack2-journal-db';
 import type { AggAcc, ScanOptions } from 'vrack2-journal-db';
 import IGuardMessage from "./interfaces/IGuardMessage";
-import { IServiceJournal } from "./interfaces/IServiceMeta";
+import { IJournalToggles } from "./interfaces/IServiceMeta";
 type RawRow = {
     ts: number;
     type: string;
@@ -71,9 +71,10 @@ export default class Journal extends Device {
         metrics?: any[];
     }): void;
     /**
-     * Validate/normalize a journal capture config (null = default = capture all).
+     * Validate/normalize journal capture toggles (null = reset to defaults:
+     * events/metrics on, ports off).
      */
-    protected validateJournal(journal: any): IServiceJournal | null;
+    protected validateJournal(journal: any): IJournalToggles | null;
     protected svcWhere(service: string): NonNullable<ScanOptions['where']>;
     protected truncValue(value: any): any;
     protected sameValue(a: any, b: any): boolean;

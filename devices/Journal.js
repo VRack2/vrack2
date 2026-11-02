@@ -19,7 +19,7 @@ vrack2_core_1.ErrorManager.register('Journal', 'JRN_JOURNAL_NOT_FOUND', 'Journal
     service: vrack2_core_1.Rule.string().example('test-service').description('Service id'),
 });
 vrack2_core_1.ErrorManager.register('Journal', 'JRN_STATS_TOO_MANY_BUCKETS', 'Too many buckets for the requested period/interval — use a coarser interval (e.g. 1d instead of 1h) or a shorter period');
-vrack2_core_1.ErrorManager.register('Journal', 'JRN_BAD_JOURNAL', 'Bad journal capture config: expected null or { events: [channel,...] | false, ports: boolean, metrics: boolean }');
+vrack2_core_1.ErrorManager.register('Journal', 'JRN_BAD_JOURNAL', 'Bad journal capture toggles: expected null or { events: boolean, ports: boolean, metrics: boolean }');
 vrack2_core_1.ErrorManager.register('Journal', 'JRN_POINTS_LIMIT', 'Read window exceeds maxReadPoints — narrow the period or coarsen the precision', {
     points: vrack2_core_1.Rule.number().required().description('Points/rows the call would materialize'),
     limit: vrack2_core_1.Rule.number().required().description('Configured maxReadPoints'),
@@ -160,7 +160,8 @@ class Journal extends vrack2_core_1.Device {
         }
     }
     /**
-     * Validate/normalize a journal capture config (null = default = capture all).
+     * Validate/normalize journal capture toggles (null = reset to defaults:
+     * events/metrics on, ports off).
      */
     validateJournal(journal) {
         if (journal === null || journal === undefined)
@@ -168,23 +169,12 @@ class Journal extends vrack2_core_1.Device {
         if (typeof journal !== 'object' || Array.isArray(journal))
             throw vrack2_core_1.ErrorManager.make('JRN_BAD_JOURNAL');
         const out = {};
-        if (journal.events !== undefined) {
-            if (journal.events === false)
-                out.events = false;
-            else if (Array.isArray(journal.events) && journal.events.every((c) => typeof c === 'string'))
-                out.events = journal.events.slice();
-            else
-                throw vrack2_core_1.ErrorManager.make('JRN_BAD_JOURNAL');
-        }
-        if (journal.ports !== undefined) {
-            if (typeof journal.ports !== 'boolean')
-                throw vrack2_core_1.ErrorManager.make('JRN_BAD_JOURNAL');
-            out.ports = journal.ports;
-        }
-        if (journal.metrics !== undefined) {
-            if (typeof journal.metrics !== 'boolean')
-                throw vrack2_core_1.ErrorManager.make('JRN_BAD_JOURNAL');
-            out.metrics = journal.metrics;
+        for (const key of ['events', 'ports', 'metrics']) {
+            if (journal[key] !== undefined) {
+                if (typeof journal[key] !== 'boolean')
+                    throw vrack2_core_1.ErrorManager.make('JRN_BAD_JOURNAL');
+                out[key] = journal[key];
+            }
         }
         return out;
     }
@@ -351,17 +341,17 @@ class Journal extends vrack2_core_1.Device {
         this.ports.output['register.command'].push({
             command: 'serviceLogSet',
             short: 'Service journal capture config',
-            description: 'Set per-service journal capture toggles (persisted in the service meta and applied live on a running service): journal = null (default: capture everything) or { events: [channel,...] | false, ports: boolean, metrics: boolean }.',
+            description: 'Set per-service journal capture toggles (persisted in the service meta and applied live on a running service): journal = { events, ports, metrics } booleans, or null to reset to defaults (events/metrics on, ports off — port logging is opt-in).',
             level: 3,
             owner: this.type,
             icon: 'log-list',
             handler: this.apiServiceLogSet.bind(this),
             rules: {
                 service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-                journal: vrack2_core_1.Rule.any().default(null).example({ events: ['error', 'alert'], ports: false, metrics: true }).description('null = default (all), or { events: [channel,...] | false, ports: boolean, metrics: boolean }'),
+                journal: vrack2_core_1.Rule.any().default(null).example({ ports: true }).description('{ events, ports, metrics } booleans or null = defaults (events/metrics on, ports off)'),
             },
             return: vrack2_core_1.Rule.object().fields({
-                journal: vrack2_core_1.Rule.any().description('Journal capture config after the call (null = default)'),
+                journal: vrack2_core_1.Rule.any().description('Effective capture config after the call: { events, ports, metrics }'),
             }).description('Set result')
         });
         this.ports.output['register.command'].push({

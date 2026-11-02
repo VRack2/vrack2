@@ -1,13 +1,12 @@
 /**
  * Journal capture toggles for a service (unified VRack2-level journal).
- * Absent = everything captured.
+ * Persisted in the meta file as flat keys: journalEvents / journalMetrics /
+ * journalPorts. Defaults: events and metrics on, ports off — port logging is
+ * a debug tool and must be enabled explicitly.
 */
-export interface IServiceJournal {
-    /** Device event channels to capture: whitelist, or false = off. Absent = all. */
-    events?: Array<string> | false;
-    /** Capture outgoing port pushes. Absent = true. */
+export interface IJournalToggles {
+    events?: boolean;
     ports?: boolean;
-    /** Capture device metrics. Absent = true. */
     metrics?: boolean;
 }
 
@@ -31,6 +30,10 @@ export default interface IServiceMeta {
     isolated: boolean;
     /**  Список подписок на внутренние каналы */
     parentChannels?: Array<string>
-    /** Journal capture toggles (absent = capture everything) */
-    journal?: IServiceJournal
+    /** Capture device events to the master journal (default: true) */
+    journalEvents?: boolean
+    /** Capture device metrics to the master journal (default: true) */
+    journalMetrics?: boolean
+    /** Capture outgoing port pushes to the master journal (default: false, explicit opt-in) */
+    journalPorts?: boolean
 }

@@ -204,8 +204,11 @@ module.exports = a
  * **autoStart** *boolean* - Если `true` сервис будет запущен после старта VRack
  * **autoReload** *boolean* - Если `true` сервис будет перезапущен, если он завершит свою работу в связи с ошибкой
  * **isolated** *boolean* - Если `true` сервис будет запщуен в отдельном процессе для изоляции кода, см [Работа с LL интерфейсами: I²C, Serial...](./LLHardware.md)
+ * **journalEvents** *boolean* - Если `false`, события устройств не пишутся в журнал мастера (по умолчанию включено)
+ * **journalMetrics** *boolean* - Если `false`, метрики устройств не пишутся в журнал мастера (по умолчанию включено)
+ * **journalPorts** *boolean* - Если `true`, исходящие порт-пуши пишутся в журнал мастера (по умолчанию **выключено** — отладочный инструмент, включается явно)
 
-Журнал событий сервиса (исходящие порт-пуши + события устройств `notify`/`alert`/`event`/`terminal`/`error`/`terminate` + метрики) ведёт **унифицированный журнал мастера** — устройство `vrack2.Journal` (`journals/vrack2`, таблицы `service_event`/`service_port`/`service_metric`, vrack2-journal-db): воркер форвардит события сервиса на мастер, отдельные per-service журналы не ведутся. Захват включён **по умолчанию** для каждого сервиса; тумблеры — в `<id>.meta.json` (`journal: { events, ports, metrics }`). Чтение — команда `serviceLog` / MCP-инструмент `service_log` (`limit` — количество последних записей, по умолчанию 20), статистика по бакетам — `serviceLogStats`, live-вкл/выкл и сохранение тумблеров — `serviceLogSet` / `service_log_set`, очистка — `serviceLogClear` / `service_log_clear`.
+Журнал событий сервиса (исходящие порт-пуши + события устройств `notify`/`alert`/`event`/`terminal`/`error`/`terminate` + метрики) ведёт **унифицированный журнал мастера** — устройство `vrack2.Journal` (`journals/vrack2`, таблицы `service_event`/`service_port`/`service_metric`, vrack2-journal-db): воркер форвардит события сервиса на мастер, отдельные per-service журналы не ведутся. События и метрики пишутся **по умолчанию**; порт-пуши — только при явном включении (`journalPorts: true`), логирование портов всегда на ответственности пользователя. Тумблеры — плоские ключи в `<id>.meta.json` (`journalEvents`, `journalMetrics`, `journalPorts`). Чтение — команда `serviceLog` / MCP-инструмент `service_log` (`limit` — количество последних записей, по умолчанию 20), статистика по бакетам — `serviceLogStats`, live-вкл/выкл и сохранение тумблеров — `serviceLogSet` / `service_log_set`, очистка — `serviceLogClear` / `service_log_clear`.
 
 ## Переопределение конфигурации сервис-файла
 

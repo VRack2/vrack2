@@ -13,13 +13,13 @@ import type { AggAcc, Row, ScanOptions } from 'vrack2-journal-db'
 import path from 'path';
 
 import IGuardMessage from "./interfaces/IGuardMessage";
-import { IServiceJournal } from "./interfaces/IServiceMeta";
+import { IJournalToggles } from "./interfaces/IServiceMeta";
 
 ErrorManager.register('Journal', 'JRN_JOURNAL_NOT_FOUND', 'Journal data not found for this service (no rows in the unified journal tables)', {
     service: Rule.string().example('test-service').description('Service id'),
 })
 ErrorManager.register('Journal', 'JRN_STATS_TOO_MANY_BUCKETS', 'Too many buckets for the requested period/interval — use a coarser interval (e.g. 1d instead of 1h) or a shorter period')
-ErrorManager.register('Journal', 'JRN_BAD_JOURNAL', 'Bad journal capture config: expected null or { events: [channel,...] | false, ports: boolean, metrics: boolean }')
+ErrorManager.register('Journal', 'JRN_BAD_JOURNAL', 'Bad journal capture toggles: expected null or { events: boolean, ports: boolean, metrics: boolean }')
 ErrorManager.register('Journal', 'JRN_POINTS_LIMIT', 'Read window exceeds maxReadPoints — narrow the period or coarsen the precision', {
     points: Rule.number().required().description('Points/rows the call would materialize'),
     limit: Rule.number().required().description('Configured maxReadPoints'),
@@ -181,24 +181,18 @@ export default class Journal extends Device {
     }
 
     /**
-     * Validate/normalize a journal capture config (null = default = capture all).
+     * Validate/normalize journal capture toggles (null = reset to defaults:
+     * events/metrics on, ports off).
      */
-    protected validateJournal(journal: any): IServiceJournal | null {
+    protected validateJournal(journal: any): IJournalToggles | null {
         if (journal === null || journal === undefined) return null
         if (typeof journal !== 'object' || Array.isArray(journal)) throw ErrorManager.make('JRN_BAD_JOURNAL')
-        const out: IServiceJournal = {}
-        if (journal.events !== undefined) {
-            if (journal.events === false) out.events = false
-            else if (Array.isArray(journal.events) && journal.events.every((c: any) => typeof c === 'string')) out.events = journal.events.slice()
-            else throw ErrorManager.make('JRN_BAD_JOURNAL')
-        }
-        if (journal.ports !== undefined) {
-            if (typeof journal.ports !== 'boolean') throw ErrorManager.make('JRN_BAD_JOURNAL')
-            out.ports = journal.ports
-        }
-        if (journal.metrics !== undefined) {
-            if (typeof journal.metrics !== 'boolean') throw ErrorManager.make('JRN_BAD_JOURNAL')
-            out.metrics = journal.metrics
+        const out: IJournalToggles = {}
+        for (const key of ['events', 'ports', 'metrics'] as const) {
+            if (journal[key] !== undefined) {
+                if (typeof journal[key] !== 'boolean') throw ErrorManager.make('JRN_BAD_JOURNAL')
+                out[key] = journal[key]
+            }
         }
         return out
     }
@@ -360,17 +354,17 @@ export default class Journal extends Device {
         this.ports.output['register.command'].push({
             command: 'serviceLogSet',
             short: 'Service journal capture config',
-            description: 'Set per-service journal capture toggles (persisted in the service meta and applied live on a running service): journal = null (default: capture everything) or { events: [channel,...] | false, ports: boolean, metrics: boolean }.',
+            description: 'Set per-service journal capture toggles (persisted in the service meta and applied live on a running service): journal = { events, ports, metrics } booleans, or null to reset to defaults (events/metrics on, ports off — port logging is opt-in).',
             level: 3,
             owner: this.type,
             icon: 'log-list',
             handler: this.apiServiceLogSet.bind(this),
             rules: {
                 service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-                journal: Rule.any().default(null).example({ events: ['error', 'alert'], ports: false, metrics: true }).description('null = default (all), or { events: [channel,...] | false, ports: boolean, metrics: boolean }'),
+                journal: Rule.any().default(null).example({ ports: true }).description('{ events, ports, metrics } booleans or null = defaults (events/metrics on, ports off)'),
             },
             return: Rule.object().fields({
-                journal: Rule.any().description('Journal capture config after the call (null = default)'),
+                journal: Rule.any().description('Effective capture config after the call: { events, ports, metrics }'),
             }).description('Set result')
         })
 

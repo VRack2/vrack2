@@ -301,13 +301,13 @@ class Serivce extends vrack2_core_1.Device {
         });
         this.ports.output['register.command'].push({
             command: 'serviceJournalSet',
-            description: 'Internal live toggle of the service journal capture (meta.journal applied without restart)',
+            description: 'Internal live toggle of the service journal capture (journalEvents/journalMetrics/journalPorts meta keys applied without restart)',
             level: 0,
             owner: this.type,
             handler: this.apiServiceJournalSet.bind(this),
             rules: {
                 service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-                journal: vrack2_core_1.Rule.any().default(null).description('Journal capture config (null = default: capture everything)'),
+                journal: vrack2_core_1.Rule.any().default(null).description('Capture toggles { events, ports, metrics } booleans (null = reset to defaults: events/metrics on, ports off)'),
             },
         });
         this.ports.output['register.command'].push({
@@ -634,16 +634,36 @@ class Serivce extends vrack2_core_1.Device {
         });
     }
     /**
-     * Live apply of the journal capture config (serviceLogSet → ServiceManager
+     * Live apply of the journal capture toggles (serviceLogSet → ServiceManager
      * → this internal command). Capture checks meta at event time, so the new
      * config takes effect on the very next event.
      */
     apiServiceJournalSet(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
-            this.ServiceMeta.journal = (data.journal === null || data.journal === undefined) ? undefined : data.journal;
-            return { journal: (_a = this.ServiceMeta.journal) !== null && _a !== void 0 ? _a : null };
+            delete this.ServiceMeta.journalEvents;
+            delete this.ServiceMeta.journalMetrics;
+            delete this.ServiceMeta.journalPorts;
+            const j = data.journal;
+            if (j) {
+                if (j.events !== undefined)
+                    this.ServiceMeta.journalEvents = j.events;
+                if (j.ports !== undefined)
+                    this.ServiceMeta.journalPorts = j.ports;
+                if (j.metrics !== undefined)
+                    this.ServiceMeta.journalMetrics = j.metrics;
+            }
+            return { journal: this.journalEffective() };
         });
+    }
+    /**
+     * Effective journal capture config after the meta defaults are applied.
+     */
+    journalEffective() {
+        return {
+            events: this.ServiceMeta.journalEvents !== false,
+            ports: this.ServiceMeta.journalPorts === true,
+            metrics: this.ServiceMeta.journalMetrics !== false,
+        };
     }
     /**
      * Выполняет внутреннюю передачу события из основного родительского контейнера
@@ -714,9 +734,9 @@ class Serivce extends vrack2_core_1.Device {
     /**                 JOURNAL FORWARDING                 **/
     /**
      * Subscribe to the service container events (device channels, port
-     * pushes, metrics) and forward them in batches to the master Journal
-     * device. Capture toggles (meta.journal) are checked at event time, so
-     * serviceLogSet applies live.
+      * pushes, metrics) and forward them in batches to the master Journal
+      * device. Capture toggles (journalEvents/journalMetrics/journalPorts) are
+      * checked at event time, so serviceLogSet applies live.
      */
     bindJournal() {
         const svc = this.Serviceinfo.id;
@@ -724,7 +744,7 @@ class Serivce extends vrack2_core_1.Device {
         for (const channel in channels) {
             const type = channels[channel];
             this.ServiceContainer.on(channel, (data) => {
-                if (!this.journalCapture('events', type))
+                if (!this.journalCapture('events'))
                     return;
                 this.journalEvents.push({ ts: Date.now(), svc, device: data.device, event: type, data: data.data, trace: this.makeBroadcastTrace(data.trace) });
                 this.scheduleJournalFlush();
@@ -747,23 +767,16 @@ class Serivce extends vrack2_core_1.Device {
         });
     }
     /**
-     * Journal capture toggle check against the service meta (absent = capture
-     * everything).
+     * Journal capture toggle check against the service meta. Defaults: events
+     * and metrics on, ports off — port logging is a debug tool and must be
+     * enabled explicitly (journalPorts).
      */
-    journalCapture(kind, channel) {
-        const j = this.ServiceMeta.journal;
-        if (!j)
-            return true;
-        if (kind === 'events') {
-            if (j.events === false)
-                return false;
-            if (Array.isArray(j.events))
-                return j.events.includes(channel !== null && channel !== void 0 ? channel : '');
-            return true;
-        }
+    journalCapture(kind) {
         if (kind === 'ports')
-            return j.ports !== false;
-        return j.metrics !== false;
+            return this.ServiceMeta.journalPorts === true;
+        if (kind === 'metrics')
+            return this.ServiceMeta.journalMetrics !== false;
+        return this.ServiceMeta.journalEvents !== false;
     }
     scheduleJournalFlush() {
         var _a, _b;

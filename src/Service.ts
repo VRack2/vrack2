@@ -8,7 +8,7 @@ import { threadId } from "worker_threads"
 
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from './interfaces/IServiceConfig';
-import IServiceMeta, { IServiceJournal } from "./interfaces/IServiceMeta";
+import IServiceMeta, { IJournalToggles } from "./interfaces/IServiceMeta";
 import IDeviceActionRequest from "./interfaces/IDeviceActionRequest";
 
 import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
@@ -347,13 +347,13 @@ export default class Serivce extends Device {
 
         this.ports.output['register.command'].push({
             command: 'serviceJournalSet',
-            description: 'Internal live toggle of the service journal capture (meta.journal applied without restart)',
+            description: 'Internal live toggle of the service journal capture (journalEvents/journalMetrics/journalPorts meta keys applied without restart)',
             level: 0,
             owner: this.type,
             handler: this.apiServiceJournalSet.bind(this),
             rules: {
                 service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-                journal: Rule.any().default(null).description('Journal capture config (null = default: capture everything)'),
+                journal: Rule.any().default(null).description('Capture toggles { events, ports, metrics } booleans (null = reset to defaults: events/metrics on, ports off)'),
             },
         })
 
@@ -671,13 +671,32 @@ export default class Serivce extends Device {
     }
 
     /**
-     * Live apply of the journal capture config (serviceLogSet → ServiceManager
+     * Live apply of the journal capture toggles (serviceLogSet → ServiceManager
      * → this internal command). Capture checks meta at event time, so the new
      * config takes effect on the very next event.
      */
-    async apiServiceJournalSet(data: { service: string, journal: any }, gData: IGuardMessage) {
-        this.ServiceMeta.journal = (data.journal === null || data.journal === undefined) ? undefined : data.journal as IServiceJournal
-        return { journal: this.ServiceMeta.journal ?? null }
+    async apiServiceJournalSet(data: { service: string, journal: IJournalToggles | null }, gData: IGuardMessage) {
+        delete this.ServiceMeta.journalEvents
+        delete this.ServiceMeta.journalMetrics
+        delete this.ServiceMeta.journalPorts
+        const j = data.journal
+        if (j) {
+            if (j.events !== undefined) this.ServiceMeta.journalEvents = j.events
+            if (j.ports !== undefined) this.ServiceMeta.journalPorts = j.ports
+            if (j.metrics !== undefined) this.ServiceMeta.journalMetrics = j.metrics
+        }
+        return { journal: this.journalEffective() }
+    }
+
+    /**
+     * Effective journal capture config after the meta defaults are applied.
+     */
+    protected journalEffective() {
+        return {
+            events: this.ServiceMeta.journalEvents !== false,
+            ports: this.ServiceMeta.journalPorts === true,
+            metrics: this.ServiceMeta.journalMetrics !== false,
+        }
     }
 
 
@@ -752,9 +771,9 @@ export default class Serivce extends Device {
 
     /**
      * Subscribe to the service container events (device channels, port
-     * pushes, metrics) and forward them in batches to the master Journal
-     * device. Capture toggles (meta.journal) are checked at event time, so
-     * serviceLogSet applies live.
+      * pushes, metrics) and forward them in batches to the master Journal
+      * device. Capture toggles (journalEvents/journalMetrics/journalPorts) are
+      * checked at event time, so serviceLogSet applies live.
      */
     protected bindJournal() {
         const svc = this.Serviceinfo.id
@@ -762,7 +781,7 @@ export default class Serivce extends Device {
         for (const channel in channels) {
             const type = channels[channel]
             this.ServiceContainer.on(channel, (data: { device: string; data: any; trace: any; }) => {
-                if (!this.journalCapture('events', type)) return
+                if (!this.journalCapture('events')) return
                 this.journalEvents.push({ ts: Date.now(), svc, device: data.device, event: type, data: data.data, trace: this.makeBroadcastTrace(data.trace) })
                 this.scheduleJournalFlush()
             })
@@ -782,19 +801,14 @@ export default class Serivce extends Device {
     }
 
     /**
-     * Journal capture toggle check against the service meta (absent = capture
-     * everything).
+     * Journal capture toggle check against the service meta. Defaults: events
+     * and metrics on, ports off — port logging is a debug tool and must be
+     * enabled explicitly (journalPorts).
      */
-    protected journalCapture(kind: 'events' | 'ports' | 'metrics', channel?: string): boolean {
-        const j = this.ServiceMeta.journal
-        if (!j) return true
-        if (kind === 'events') {
-            if (j.events === false) return false
-            if (Array.isArray(j.events)) return j.events.includes(channel ?? '')
-            return true
-        }
-        if (kind === 'ports') return j.ports !== false
-        return j.metrics !== false
+    protected journalCapture(kind: 'events' | 'ports' | 'metrics'): boolean {
+        if (kind === 'ports') return this.ServiceMeta.journalPorts === true
+        if (kind === 'metrics') return this.ServiceMeta.journalMetrics !== false
+        return this.ServiceMeta.journalEvents !== false
     }
 
     protected scheduleJournalFlush() {

@@ -3,7 +3,7 @@ import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from './interfaces/IServiceConfig';
-import IServiceMeta, { IServiceJournal } from "./interfaces/IServiceMeta";
+import IServiceMeta, { IJournalToggles } from "./interfaces/IServiceMeta";
 import IDeviceActionRequest from "./interfaces/IDeviceActionRequest";
 import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 import IDevicePushRequest from "./interfaces/IDevicePushRequest";
@@ -243,16 +243,28 @@ export default class Serivce extends Device {
      */
     apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
     /**
-     * Live apply of the journal capture config (serviceLogSet → ServiceManager
+     * Live apply of the journal capture toggles (serviceLogSet → ServiceManager
      * → this internal command). Capture checks meta at event time, so the new
      * config takes effect on the very next event.
      */
     apiServiceJournalSet(data: {
         service: string;
-        journal: any;
+        journal: IJournalToggles | null;
     }, gData: IGuardMessage): Promise<{
-        journal: IServiceJournal | null;
+        journal: {
+            events: boolean;
+            ports: boolean;
+            metrics: boolean;
+        };
     }>;
+    /**
+     * Effective journal capture config after the meta defaults are applied.
+     */
+    protected journalEffective(): {
+        events: boolean;
+        ports: boolean;
+        metrics: boolean;
+    };
     /**
      * Выполняет внутреннюю передачу события из основного родительского контейнера
      *
@@ -282,16 +294,17 @@ export default class Serivce extends Device {
     /**                 JOURNAL FORWARDING                 **/
     /**
      * Subscribe to the service container events (device channels, port
-     * pushes, metrics) and forward them in batches to the master Journal
-     * device. Capture toggles (meta.journal) are checked at event time, so
-     * serviceLogSet applies live.
+      * pushes, metrics) and forward them in batches to the master Journal
+      * device. Capture toggles (journalEvents/journalMetrics/journalPorts) are
+      * checked at event time, so serviceLogSet applies live.
      */
     protected bindJournal(): void;
     /**
-     * Journal capture toggle check against the service meta (absent = capture
-     * everything).
+     * Journal capture toggle check against the service meta. Defaults: events
+     * and metrics on, ports off — port logging is a debug tool and must be
+     * enabled explicitly (journalPorts).
      */
-    protected journalCapture(kind: 'events' | 'ports' | 'metrics', channel?: string): boolean;
+    protected journalCapture(kind: 'events' | 'ports' | 'metrics'): boolean;
     protected scheduleJournalFlush(): void;
     /**
      * Send the accumulated journal batch to the master (fire-and-forget via

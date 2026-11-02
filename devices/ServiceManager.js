@@ -566,29 +566,44 @@ class ServiceManager extends vrack2_core_1.Device {
         });
     }
     /**
-     * Set the journal capture config of a service: persist it in the meta file
-     * and apply it live to a running worker (internal serviceJournalSet).
+     * Set the journal capture toggles of a service: persist them in the meta
+     * file as flat keys (journalEvents/journalMetrics/journalPorts) and apply
+     * them live to a running worker (internal serviceJournalSet).
      *
      * @param service Service ID
-     * @param journal Capture config (null = default: capture everything)
-     * @see IServiceJournal
+     * @param journal Capture toggles (null = reset to defaults: events/metrics on, ports off)
+     * @see IJournalToggles
     */
     setJournal(service, journal) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a;
             const conf = this.getService(service);
             const meta = this.getMeta(service);
-            if (journal === null || journal === undefined)
-                delete meta.journal;
-            else
-                meta.journal = journal;
+            delete meta.journalEvents;
+            delete meta.journalMetrics;
+            delete meta.journalPorts;
+            if (journal) {
+                if (journal.events !== undefined)
+                    meta.journalEvents = journal.events;
+                if (journal.ports !== undefined)
+                    meta.journalPorts = journal.ports;
+                if (journal.metrics !== undefined)
+                    meta.journalMetrics = journal.metrics;
+            }
             this.servicesMeta[service] = meta;
             try {
                 const raw = vrack2_core_1.ImportManager.isFile(conf.metaPath) ? vrack2_core_1.ImportManager.importJSON(conf.metaPath) : {};
-                if (journal === null || journal === undefined)
-                    delete raw.journal;
-                else
-                    raw.journal = journal;
+                delete raw.journal;
+                delete raw.journalEvents;
+                delete raw.journalMetrics;
+                delete raw.journalPorts;
+                if (journal) {
+                    if (journal.events !== undefined)
+                        raw.journalEvents = journal.events;
+                    if (journal.ports !== undefined)
+                        raw.journalPorts = journal.ports;
+                    if (journal.metrics !== undefined)
+                        raw.journalMetrics = journal.metrics;
+                }
                 fs_1.default.writeFileSync(conf.metaPath, JSON.stringify(raw, null, '\t'));
             }
             catch (error) {
@@ -602,7 +617,11 @@ class ServiceManager extends vrack2_core_1.Device {
                     this.error('Error live-apply service journal', error);
                 }
             }
-            return { journal: (_a = meta.journal) !== null && _a !== void 0 ? _a : null };
+            return { journal: {
+                    events: meta.journalEvents !== false,
+                    ports: meta.journalPorts === true,
+                    metrics: meta.journalMetrics !== false,
+                } };
         });
     }
     /**
