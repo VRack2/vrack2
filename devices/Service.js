@@ -311,32 +311,6 @@ class Serivce extends vrack2_core_1.Device {
             },
         });
         this.ports.output['register.command'].push({
-            command: 'serviceMetric',
-            short: 'Get service metric',
-            description: 'Getting a service metrics',
-            level: 3,
-            owner: this.type,
-            icon: 'graph-up',
-            handler: this.apiServiceMetric.bind(this),
-            rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-                device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
-                metric: vrack2_core_1.Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
-                period: vrack2_core_1.Rule.string().maxLength(120).required().example('now-1h:now').description('VRackDB period'),
-                precision: vrack2_core_1.Rule.string().maxLength(60).required().example('30s').description('VRackDB precision'),
-                func: vrack2_core_1.Rule.string().default('last').maxLength(10).example('last').description('Read function (last,first,min,max,avg,sum)')
-            },
-            return: vrack2_core_1.Rule.object().fields({
-                relevant: vrack2_core_1.Rule.boolean().default(false).example(false).description('result relevance flag'),
-                start: vrack2_core_1.Rule.number().integer().example(1).description('Beginning of the period'),
-                end: vrack2_core_1.Rule.number().integer().example(100).description('End of period '),
-                rows: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
-                    time: vrack2_core_1.Rule.number().integer().example(10).description('Time in MTU'),
-                    value: vrack2_core_1.Rule.number().example(12.3223).description('Metric value || null')
-                }).description('Metric storage object')).description('Array of metrics')
-            }).description('Metric request result - see vrack-db read documentation')
-        });
-        this.ports.output['register.command'].push({
             command: 'serviceParentEvent',
             short: 'Internal Parent Event',
             description: 'Request internal parent event to child service',
@@ -617,23 +591,6 @@ class Serivce extends vrack2_core_1.Device {
         });
     }
     /**
-     * Read device metric from a container
-     */
-    readDeviceMetric(container, data) {
-        if (!container.devices[data.device])
-            throw vrack2_core_1.ErrorManager.make('CONT_DEVICE_NF');
-        const DM = container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.JournalDbMetrics);
-        return DM.read(data.device, data.metric, data.period, data.precision);
-    }
-    /**
-     * Getting service metric (worker container, VRack2 level)
-     */
-    apiServiceMetric(data, gData) {
-        return __awaiter(this, void 0, void 0, function* () {
-            return this.readDeviceMetric(this.Container, data);
-        });
-    }
-    /**
      * Live apply of the journal capture toggles (serviceLogSet → ServiceManager
      * → this internal command). Capture checks meta at event time, so the new
      * config takes effect on the very next event.
@@ -763,6 +720,20 @@ class Serivce extends vrack2_core_1.Device {
             if (typeof value !== 'number' || !Number.isFinite(value))
                 return;
             this.journalMetrics.push({ ts: Date.now(), svc, device: data.device, metric: data.data, value });
+            this.scheduleJournalFlush();
+        });
+        // Process-level metrics: the worker's own container (`worker::<id>`)
+        // devices — the vrack2 `Service` device (memory.*) — join the unified
+        // journal under the container id, so `serviceDeviceMetric` with
+        // service=`worker::<id>` reads them. Container events do not bubble
+        // from child containers, so there is no double capture.
+        this.Container.on('device.metric', (data) => {
+            if (!this.journalCapture('metrics'))
+                return;
+            const value = data.trace && typeof data.trace === 'object' ? data.trace.value : data.trace;
+            if (typeof value !== 'number' || !Number.isFinite(value))
+                return;
+            this.journalMetrics.push({ ts: Date.now(), svc: this.Container.id, device: data.device, metric: data.data, value });
             this.scheduleJournalFlush();
         });
     }

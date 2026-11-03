@@ -68,32 +68,6 @@ class System extends vrack2_core_1.Device {
             },
         });
         this.ports.output['register.command'].push({
-            command: 'systemMetric',
-            short: 'Get system metric',
-            description: 'Getting a system metrics',
-            level: 3,
-            owner: this.type,
-            icon: 'graph-up',
-            handler: this.apiSystemMetric.bind(this),
-            rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).default('not used').required().description('Service id (not used for this action)'),
-                device: vrack2_core_1.Rule.string().maxLength(120).example('DeviceID').required().description('Device id'),
-                metric: vrack2_core_1.Rule.string().maxLength(120).example('metric.id').required().description('Device metric path'),
-                period: vrack2_core_1.Rule.string().maxLength(120).example('start:end').required().description('VRackDB period'),
-                precision: vrack2_core_1.Rule.string().maxLength(60).required().example('400').description('VRackDB precision'),
-                func: vrack2_core_1.Rule.string().default('last').maxLength(10).description('Read function (last,first,min,max,avg,sum)')
-            },
-            return: vrack2_core_1.Rule.object().fields({
-                relevant: vrack2_core_1.Rule.boolean().default(false).example(false).description('result relevance flag'),
-                start: vrack2_core_1.Rule.number().integer().example(1).description('Beginning of the period'),
-                end: vrack2_core_1.Rule.number().integer().example(100).description('End of period '),
-                rows: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
-                    time: vrack2_core_1.Rule.number().integer().example(10).description('Time in MTU'),
-                    value: vrack2_core_1.Rule.number().example(12.3223).description('Metric value || null')
-                }).description('Metric storage object')).description('Array of metrics')
-            }).description('Metric request result - see vrack-db read documentation')
-        });
-        this.ports.output['register.command'].push({
             command: 'systemInfo',
             short: 'Get sysinfo',
             description: 'Returns the basic information available to nodejs',
@@ -219,18 +193,8 @@ class System extends vrack2_core_1.Device {
         });
     }
     /**
-     * Getting device metric
-     * Obtaining system metrics. Those that were initialized at the VRack2 level
-    */
-    apiSystemMetric(data, gData) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.JournalDbMetrics);
-            return DM.read(data.device, data.metric, data.period, data.precision);
-        });
-    }
-    /**
      * Returns a list of device vendors
-    */
+     */
     apiVendorList() {
         return __awaiter(this, void 0, void 0, function* () {
             const DM = this.Container.Bootstrap.getBootClass('DeviceManager', vrack2_core_1.DeviceManager);

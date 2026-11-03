@@ -133,6 +133,56 @@ export default class Journal extends Device {
             dims: ['svc', 'device', 'metric'],
             cluster: ['svc', 'device', 'metric'],
         }))
+
+        // The master's own container events join the unified journal under
+        // svc = container id (`vrack2`) — same channels Service.bindJournal
+        // captures for services (all except render), so `serviceLog` with
+        // service=`vrack2` reads the master's own event history.
+        const channels: { [key: string]: string } = {
+            'device.error': 'error',
+            'device.notify': 'notify',
+            'device.alert': 'alert',
+            'device.terminal': 'terminal',
+            'device.event': 'event',
+            'device.terminate': 'terminate',
+        }
+        for (const channel in channels) {
+            this.Container.on(channel, (data: { device: string; data: any; trace: any }) => {
+                if (!this.eventTable) return
+                try {
+                    this.eventTable.append({
+                        ts: Date.now(),
+                        svc: String(this.Container.id),
+                        device: String(data.device),
+                        event: channels[channel],
+                        data: data.data,
+                        trace: data.trace,
+                    })
+                } catch (e) {
+                    this.error('Journal own-event append failed', e as Error)
+                }
+            })
+        }
+
+        // The master's own container metrics join the unified journal under
+        // svc = container id (`vrack2`), so `serviceDeviceMetric` is the only
+        // metrics read API for every container: <svc>, worker::<svc>, vrack2.
+        this.Container.on('device.metric', (data: { device: string; data: any; trace: any }) => {
+            if (!this.metricTable) return
+            const value = data.trace && typeof data.trace === 'object' ? data.trace.value : data.trace
+            if (typeof value !== 'number' || !Number.isFinite(value)) return
+            try {
+                this.metricTable.append({
+                    ts: Date.now(),
+                    svc: String(this.Container.id).toLowerCase(),
+                    device: String(data.device).toLowerCase(),
+                    metric: String(data.data).toLowerCase(),
+                    value,
+                })
+            } catch (e) {
+                this.error('Journal own-metric append failed', e as Error)
+            }
+        })
     }
 
     onStop(): void {
@@ -371,13 +421,13 @@ export default class Journal extends Device {
         this.ports.output['register.command'].push({
             command: 'serviceDeviceMetric',
             short: 'Get service device metric',
-            description: 'Getting a service device metric from the unified platform journal. Works whether or not the service is running.',
+            description: 'Getting a device metric from the unified platform journal — the single metrics read API for every container: service id (`backup-server`) reads the service container devices, `worker::<service>` reads the service process (vrack2 `Service` device metrics: memory.*), `vrack2` reads the master itself. Works whether or not the service is running.',
             level: 3,
             owner: this.type,
             icon: 'graph-up',
             handler: this.apiServiceDeviceMetric.bind(this),
             rules: {
-                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                service: Rule.string().maxLength(120).required().example('test-service').description('Container id: service id, worker::<service> (service process) or vrack2 (master)'),
                 device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
                 metric: Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
                 period: Rule.string().maxLength(120).required().example('now-1h:now').description('Journal period'),
@@ -505,14 +555,20 @@ export default class Journal extends Device {
     /**
      * Read a device metric from the unified journal — the same dense-grid
      * contract as core `JournalDbMetrics.read()` (vrack-db compatible).
+     * `svc` is a container id: `<service>` (service container),
+     * `worker::<service>` (service process) or `vrack2` (the master itself).
      */
     async apiServiceDeviceMetric(data: { service: string, device: string, metric: string, period: string, precision: string | number, func?: string }, gData: IGuardMessage): Promise<any> {
-        if (!this.metricTable) throw ErrorManager.make('JRN_JOURNAL_NOT_FOUND', { service: data.service })
-        const func = data.func ?? 'last'
-        if (!Journal.AGGREGATE_FUNCTIONS.includes(func)) throw new RangeError(`Journal: unknown aggregate function '${func}' (available: ${Journal.AGGREGATE_FUNCTIONS.join(', ')})`)
+        return this.readMetric(data.service, data.device, data.metric, data.period, data.precision, data.func)
+    }
 
-        const [start, end] = Interval.period(data.period)
-        const step = this.parsePrecision(start, end, data.precision)
+    readMetric(svc: string, device: string, metric: string, period: string, precision: string | number, func?: string): any {
+        if (!this.metricTable) throw ErrorManager.make('JRN_JOURNAL_NOT_FOUND', { service: svc })
+        const fn = func ?? 'last'
+        if (!Journal.AGGREGATE_FUNCTIONS.includes(fn)) throw new RangeError(`Journal: unknown aggregate function '${fn}' (available: ${Journal.AGGREGATE_FUNCTIONS.join(', ')})`)
+
+        const [start, end] = Interval.period(period)
+        const step = this.parsePrecision(start, end, precision)
         const grid = Interval.getIntervals(start, end, step)
         const max = Number(this.options.maxReadPoints) || 200000
         if (grid.length > max) throw ErrorManager.make('JRN_POINTS_LIMIT', { points: grid.length, limit: max })
@@ -520,9 +576,9 @@ export default class Journal extends Device {
         const e = grid[grid.length - 1]
 
         const where: NonNullable<ScanOptions['where']> = [
-            { field: 'svc', op: 'eq', value: data.service.toLowerCase() },
-            { field: 'device', op: 'eq', value: data.device.toLowerCase() },
-            { field: 'metric', op: 'eq', value: String(data.metric).toLowerCase() },
+            { field: 'svc', op: 'eq', value: svc.toLowerCase() },
+            { field: 'device', op: 'eq', value: device.toLowerCase() },
+            { field: 'metric', op: 'eq', value: String(metric).toLowerCase() },
         ]
         const buckets: (AggAcc | null)[] = new Array(grid.length).fill(null)
         let seen = 0
@@ -548,7 +604,7 @@ export default class Journal extends Device {
             relevant: seen > 0,
             start: s / 1000,
             end: e / 1000,
-            rows: grid.map((time, i) => ({ time: time / 1000, value: buckets[i] ? this.aggregateAcc(buckets[i] as AggAcc, func) : null })),
+            rows: grid.map((time, i) => ({ time: time / 1000, value: buckets[i] ? this.aggregateAcc(buckets[i] as AggAcc, fn) : null })),
         }
     }
 

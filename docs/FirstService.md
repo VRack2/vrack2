@@ -340,11 +340,11 @@ const { Device, Port, Metric } = require("vrack2-core");
 
 ```
 
-VRack2 для хранение метрик использует базу данных [VRackDB](https://github.com/ponikrf/VRackDB/wiki/RU%E2%80%90DOC%E2%80%90V3.0).
+VRack2 для хранение метрик использует **унифицированный журнал мастера** — устройство `vrack2.Journal` ([vrack2-journal-db](https://github.com/ponikrf/vrack2-journal-db), стор `journals/vrack2`, таблица `service_metric`); чтение — команда `serviceDeviceMetric` (`service` — id контейнера: `<svc>`, `worker::<svc>`, `vrack2`).
 
-Определение `Metric.inS()` сообщает, что время метрики храниться в секундах. `retentions('1s:10m, 5s:2h, 15s:1d')`- определяет длительность и точность хранения.
+Определение `Metric.inS()` сообщает, что время метрики храниться в секундах. `retentions('1s:10m, 5s:2h, 15s:1d')`- определяет длительность и точность хранения — но только в standalone-сервисах (хранилище `DeviceMetrics`/VRackDB); в VRack2 слои хранения задаёт журнал одним параметром `metricRetention`.
 
-Для лучшего опыта рекомендуется ознакомится с документацией [VRackDB](https://github.com/ponikrf/VRackDB/wiki/RU%E2%80%90DOC%E2%80%90V3.0).
+Подробнее о журнале платформы — [ServiceFile.md](./ServiceFile.md); о standalone-хранилище — документация [VRackDB](https://github.com/ponikrf/VRackDB/wiki/RU%E2%80%90DOC%E2%80%90V3.0).
 
 
 ### Дописываем `CpuInfo.js`

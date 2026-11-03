@@ -44,13 +44,7 @@ One-shot capture of the next data emitted on a device output port.
 - returns: the captured data
 - errors: SERVICE_CAPTURE_PORT_TIMEOUT, CONT_DEVICE_NF, CONT_DEVICE_PORT_NF
 
-## serviceDeviceMetric
-Read a device metric from the service journal-db.
-- params: `service`, `device`, `metric` (e.g. `temperature`), `period` (e.g. `now-1h:now`), `precision` (e.g. `30s`), `func` (default `last`; last|first|min|max|avg|sum)
-- returns: `{ relevant, start, end, rows: [{ time, value }] }`
-
-## serviceMetric
-Read a metric of the worker container itself (e.g. `memory.rss` of the Service device, 5s cadence). Same params/returns as serviceDeviceMetric.
+> Journal and metrics commands (`serviceLog*`, `serviceDeviceMetric`) are NOT submaster commands — they belong to the master's `Journal` device, see [Journal.md](./Journal.md).
 
 ## internal (level 0, hidden from catalogs)
 `serviceStart`, `serviceCheck`, `serviceStop`, `serviceParentEvent` — invoked by ServiceManager, not by clients.

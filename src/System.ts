@@ -1,10 +1,8 @@
-import { BasicType, Device, DeviceManager, JournalDbMetrics, Metric, MetricOne, Port, Rule, StructureStorage } from "vrack2-core";
+import { BasicType, Device, DeviceManager, Metric, MetricOne, Port, Rule, StructureStorage } from "vrack2-core";
 import { IContainerStructure } from "vrack2-core/lib/Container";
 import os from "os"
 import process from "process"
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
-import IGuardMessage from "./interfaces/IGuardMessage";
-import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 
 export default class System extends Device {
 
@@ -69,35 +67,6 @@ export default class System extends Device {
       },
     })
 
-    this.ports.output['register.command'].push({
-      command: 'systemMetric',
-      short: 'Get system metric',
-      description: 'Getting a system metrics',
-      level: 3,
-      owner: this.type,
-      icon: 'graph-up',
-      handler: this.apiSystemMetric.bind(this),
-      rules: {
-        service: Rule.string().maxLength(120).default('not used').required().description('Service id (not used for this action)'),
-        device: Rule.string().maxLength(120).example('DeviceID').required().description('Device id'),
-        metric: Rule.string().maxLength(120).example('metric.id').required().description('Device metric path'),
-        period: Rule.string().maxLength(120).example('start:end').required().description('VRackDB period'),
-        precision: Rule.string().maxLength(60).required().example('400').description('VRackDB precision'),
-        func: Rule.string().default('last').maxLength(10).description('Read function (last,first,min,max,avg,sum)')
-      },
-      return: Rule.object().fields({
-        relevant: Rule.boolean().default(false).example(false).description('result relevance flag'),
-        start: Rule.number().integer().example(1).description('Beginning of the period'),
-        end: Rule.number().integer().example(100).description('End of period '),
-        rows: Rule.array().content(
-            Rule.object().fields({
-                time: Rule.number().integer().example(10).description('Time in MTU'),
-                value: Rule.number().example(12.3223).description('Metric value || null')
-            }).description('Metric storage object')
-        ).description('Array of metrics')
-      }).description('Metric request result - see vrack-db read documentation')
-    })
-    
     this.ports.output['register.command'].push({
       command: 'systemInfo',
       short: 'Get sysinfo',
@@ -222,17 +191,8 @@ export default class System extends Device {
   }
 
   /**
-   * Getting device metric
-   * Obtaining system metrics. Those that were initialized at the VRack2 level
-  */
-  async apiSystemMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-    const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', JournalDbMetrics) as JournalDbMetrics
-    return DM.read(data.device, data.metric, data.period, data.precision)
-  }
-
-  /**
    * Returns a list of device vendors
-  */
+   */
   async apiVendorList(): Promise<Array<string>> {
     const DM = this.Container.Bootstrap.getBootClass('DeviceManager', DeviceManager) as DeviceManager
     return DM.getVendorList()

@@ -1,13 +1,9 @@
 {
-    "bootstrap": {
-        "ServiceLogger": { "path": "vrack2-core.ServiceLogger", "options": {} },
-        "DeviceMetrics": { "path": "vrack2-core.JournalDbMetrics", "options": {} }
-    },
     "devices": [
         {
             "id": "Journal",
             "type": "vrack2.Journal",
-            "options": { },
+            "options": {},
             "connections": [
                 "Journal.register.command -> Master.register7",
                 "WorkersManager.journal -> Journal.journal"
@@ -16,30 +12,36 @@
         {
             "id": "WSProvider",
             "type": "vrack2.WSProvider",
-            "options": { "port": 4044 },
+            "options": {
+                "port": 4044
+            },
             "connections": [
-                "WSProvider.command -> ProvidersClients.client1.command", 
-                "WSProvider.register -> ProvidersClients.client1.register", 
-                "WSProvider.unregister -> ProvidersClients.client1.unregister"        
+                "WSProvider.command -> ProvidersClients.client1.command",
+                "WSProvider.register -> ProvidersClients.client1.register",
+                "WSProvider.unregister -> ProvidersClients.client1.unregister"
             ]
         },
         {
             "id": "ProvidersClients",
             "type": "vrack2.ProvidersClients",
-            "options": { "providers": 1 },
+            "options": {
+                "providers": 1
+            },
             "connections": [
-                "ProvidersClients.provider1.send -> WSProvider.send", 
+                "ProvidersClients.provider1.send -> WSProvider.send",
                 "ProvidersClients.clients.command -> Guard.clients.command",
                 "ProvidersClients.clients.register -> Guard.clients.register",
-                "ProvidersClients.clients.unregister -> Guard.clients.unregister",        
+                "ProvidersClients.clients.unregister -> Guard.clients.unregister",
                 "ProvidersClients.clients.register -> Broadcaster.clients.register",
-                "ProvidersClients.clients.unregister -> Broadcaster.clients.unregister"        
+                "ProvidersClients.clients.unregister -> Broadcaster.clients.unregister"
             ]
         },
         {
             "id": "Guard",
             "type": "vrack2.Guard",
-            "options": { "providers": 1 },
+            "options": {
+                "providers": 1
+            },
             "connections": [
                 "Guard.client.send -> ProvidersClients.client.send",
                 "Guard.master.command -> Master.command1",
@@ -49,7 +51,7 @@
         {
             "id": "Master",
             "type": "vrack2.Master",
-            "options": { 
+            "options": {
                 "registerPorts": 7,
                 "commandPorts": 3
             },
@@ -62,8 +64,8 @@
             "type": "vrack2.Broadcaster",
             "options": {
                 "broadcastInputs": 2
-             },
-            "connections":[
+            },
+            "connections": [
                 "Broadcaster.guard.broadcast -> Guard.broadcast",
                 "Broadcaster.register.command -> Master.register2"
             ]
@@ -71,7 +73,7 @@
         {
             "id": "ApiKeyManager",
             "type": "vrack2.KeyManager",
-            "options": { },
+            "options": {},
             "connections": [
                 "ApiKeyManager.register.command -> Master.register3"
             ]
@@ -79,8 +81,8 @@
         {
             "id": "WorkersManager",
             "type": "vrack2.WorkersManager",
-            "options": { },
-            "connections":[
+            "options": {},
+            "connections": [
                 "WorkersManager.master.command -> Master.command2",
                 "WorkersManager.broadcast -> Broadcaster.clients.broadcast1"
             ]
@@ -88,8 +90,8 @@
         {
             "id": "ServiceManager",
             "type": "vrack2.ServiceManager",
-            "options": { },
-            "connections":[
+            "options": {},
+            "connections": [
                 "ServiceManager.register.command -> Master.register4",
                 "ServiceManager.worker.add -> WorkersManager.worker1.add",
                 "ServiceManager.worker.stop -> WorkersManager.worker1.stop",
@@ -100,7 +102,7 @@
         {
             "id": "System",
             "type": "vrack2.System",
-            "options": { },
+            "options": {},
             "connections": [
                 "System.register.command -> Master.register5"
             ]
@@ -108,7 +110,7 @@
         {
             "id": "DeviceInfo",
             "type": "vrack2.DeviceInfo",
-            "options": { },
+            "options": {},
             "connections": [
                 "DeviceInfo.register.command -> Master.register6",
                 "DeviceInfo.worker.add -> WorkersManager.worker2.add",
@@ -119,7 +121,7 @@
         {
             "id": "Mcp",
             "type": "vrack2-mcp.Mcp",
-            "options": { },
+            "options": {},
             "connections": [
                 "Mcp.command -> Master.command3"
             ]

@@ -110,6 +110,59 @@ class Journal extends vrack2_core_1.Device {
                 dims: ['svc', 'device', 'metric'],
                 cluster: ['svc', 'device', 'metric'],
             }));
+            // The master's own container events join the unified journal under
+            // svc = container id (`vrack2`) — same channels Service.bindJournal
+            // captures for services (all except render), so `serviceLog` with
+            // service=`vrack2` reads the master's own event history.
+            const channels = {
+                'device.error': 'error',
+                'device.notify': 'notify',
+                'device.alert': 'alert',
+                'device.terminal': 'terminal',
+                'device.event': 'event',
+                'device.terminate': 'terminate',
+            };
+            for (const channel in channels) {
+                this.Container.on(channel, (data) => {
+                    if (!this.eventTable)
+                        return;
+                    try {
+                        this.eventTable.append({
+                            ts: Date.now(),
+                            svc: String(this.Container.id),
+                            device: String(data.device),
+                            event: channels[channel],
+                            data: data.data,
+                            trace: data.trace,
+                        });
+                    }
+                    catch (e) {
+                        this.error('Journal own-event append failed', e);
+                    }
+                });
+            }
+            // The master's own container metrics join the unified journal under
+            // svc = container id (`vrack2`), so `serviceDeviceMetric` is the only
+            // metrics read API for every container: <svc>, worker::<svc>, vrack2.
+            this.Container.on('device.metric', (data) => {
+                if (!this.metricTable)
+                    return;
+                const value = data.trace && typeof data.trace === 'object' ? data.trace.value : data.trace;
+                if (typeof value !== 'number' || !Number.isFinite(value))
+                    return;
+                try {
+                    this.metricTable.append({
+                        ts: Date.now(),
+                        svc: String(this.Container.id).toLowerCase(),
+                        device: String(data.device).toLowerCase(),
+                        metric: String(data.data).toLowerCase(),
+                        value,
+                    });
+                }
+                catch (e) {
+                    this.error('Journal own-metric append failed', e);
+                }
+            });
         });
     }
     onStop() {
@@ -357,13 +410,13 @@ class Journal extends vrack2_core_1.Device {
         this.ports.output['register.command'].push({
             command: 'serviceDeviceMetric',
             short: 'Get service device metric',
-            description: 'Getting a service device metric from the unified platform journal. Works whether or not the service is running.',
+            description: 'Getting a device metric from the unified platform journal — the single metrics read API for every container: service id (`backup-server`) reads the service container devices, `worker::<service>` reads the service process (vrack2 `Service` device metrics: memory.*), `vrack2` reads the master itself. Works whether or not the service is running.',
             level: 3,
             owner: this.type,
             icon: 'graph-up',
             handler: this.apiServiceDeviceMetric.bind(this),
             rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                service: vrack2_core_1.Rule.string().maxLength(120).required().example('test-service').description('Container id: service id, worker::<service> (service process) or vrack2 (master)'),
                 device: vrack2_core_1.Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
                 metric: vrack2_core_1.Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
                 period: vrack2_core_1.Rule.string().maxLength(120).required().example('now-1h:now').description('Journal period'),
@@ -498,58 +551,63 @@ class Journal extends vrack2_core_1.Device {
     /**
      * Read a device metric from the unified journal — the same dense-grid
      * contract as core `JournalDbMetrics.read()` (vrack-db compatible).
+     * `svc` is a container id: `<service>` (service container),
+     * `worker::<service>` (service process) or `vrack2` (the master itself).
      */
     apiServiceDeviceMetric(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
-            var _a, _b;
-            if (!this.metricTable)
-                throw vrack2_core_1.ErrorManager.make('JRN_JOURNAL_NOT_FOUND', { service: data.service });
-            const func = (_a = data.func) !== null && _a !== void 0 ? _a : 'last';
-            if (!Journal.AGGREGATE_FUNCTIONS.includes(func))
-                throw new RangeError(`Journal: unknown aggregate function '${func}' (available: ${Journal.AGGREGATE_FUNCTIONS.join(', ')})`);
-            const [start, end] = vrack2_journal_db_1.Interval.period(data.period);
-            const step = this.parsePrecision(start, end, data.precision);
-            const grid = vrack2_journal_db_1.Interval.getIntervals(start, end, step);
-            const max = Number(this.options.maxReadPoints) || 200000;
-            if (grid.length > max)
-                throw vrack2_core_1.ErrorManager.make('JRN_POINTS_LIMIT', { points: grid.length, limit: max });
-            const s = grid[0];
-            const e = grid[grid.length - 1];
-            const where = [
-                { field: 'svc', op: 'eq', value: data.service.toLowerCase() },
-                { field: 'device', op: 'eq', value: data.device.toLowerCase() },
-                { field: 'metric', op: 'eq', value: String(data.metric).toLowerCase() },
-            ];
-            const buckets = new Array(grid.length).fill(null);
-            let seen = 0;
-            for (const row of this.metricTable.scan({
-                start, end, where,
-                select: ['ts', 'value', 'value_min', 'value_max', 'value_sum', 'value_count', 'value_avg', 'value_last', 'value_last_ts', 'value_first', 'value_first_ts'],
-            })) {
-                const t = row.ts;
-                if (typeof t !== 'number')
-                    continue;
-                seen++;
-                const i = Math.min(grid.length - 1, Math.max(0, Math.floor((t - s) / step)));
-                const acc = (_b = buckets[i]) !== null && _b !== void 0 ? _b : (buckets[i] = vrack2_journal_db_1.Aggregation.newAcc());
-                if (vrack2_journal_db_1.Aggregation.hasRollupCols(row, 'value')) {
-                    const o = vrack2_journal_db_1.Aggregation.fromRollupRow(row, 'value');
-                    if (o !== null)
-                        vrack2_journal_db_1.Aggregation.merge(acc, o);
-                }
-                else {
-                    const v = row.value;
-                    if (typeof v === 'number' && Number.isFinite(v))
-                        vrack2_journal_db_1.Aggregation.addValue(acc, v, t);
-                }
-            }
-            return {
-                relevant: seen > 0,
-                start: s / 1000,
-                end: e / 1000,
-                rows: grid.map((time, i) => ({ time: time / 1000, value: buckets[i] ? this.aggregateAcc(buckets[i], func) : null })),
-            };
+            return this.readMetric(data.service, data.device, data.metric, data.period, data.precision, data.func);
         });
+    }
+    readMetric(svc, device, metric, period, precision, func) {
+        var _a;
+        if (!this.metricTable)
+            throw vrack2_core_1.ErrorManager.make('JRN_JOURNAL_NOT_FOUND', { service: svc });
+        const fn = func !== null && func !== void 0 ? func : 'last';
+        if (!Journal.AGGREGATE_FUNCTIONS.includes(fn))
+            throw new RangeError(`Journal: unknown aggregate function '${fn}' (available: ${Journal.AGGREGATE_FUNCTIONS.join(', ')})`);
+        const [start, end] = vrack2_journal_db_1.Interval.period(period);
+        const step = this.parsePrecision(start, end, precision);
+        const grid = vrack2_journal_db_1.Interval.getIntervals(start, end, step);
+        const max = Number(this.options.maxReadPoints) || 200000;
+        if (grid.length > max)
+            throw vrack2_core_1.ErrorManager.make('JRN_POINTS_LIMIT', { points: grid.length, limit: max });
+        const s = grid[0];
+        const e = grid[grid.length - 1];
+        const where = [
+            { field: 'svc', op: 'eq', value: svc.toLowerCase() },
+            { field: 'device', op: 'eq', value: device.toLowerCase() },
+            { field: 'metric', op: 'eq', value: String(metric).toLowerCase() },
+        ];
+        const buckets = new Array(grid.length).fill(null);
+        let seen = 0;
+        for (const row of this.metricTable.scan({
+            start, end, where,
+            select: ['ts', 'value', 'value_min', 'value_max', 'value_sum', 'value_count', 'value_avg', 'value_last', 'value_last_ts', 'value_first', 'value_first_ts'],
+        })) {
+            const t = row.ts;
+            if (typeof t !== 'number')
+                continue;
+            seen++;
+            const i = Math.min(grid.length - 1, Math.max(0, Math.floor((t - s) / step)));
+            const acc = (_a = buckets[i]) !== null && _a !== void 0 ? _a : (buckets[i] = vrack2_journal_db_1.Aggregation.newAcc());
+            if (vrack2_journal_db_1.Aggregation.hasRollupCols(row, 'value')) {
+                const o = vrack2_journal_db_1.Aggregation.fromRollupRow(row, 'value');
+                if (o !== null)
+                    vrack2_journal_db_1.Aggregation.merge(acc, o);
+            }
+            else {
+                const v = row.value;
+                if (typeof v === 'number' && Number.isFinite(v))
+                    vrack2_journal_db_1.Aggregation.addValue(acc, v, t);
+            }
+        }
+        return {
+            relevant: seen > 0,
+            start: s / 1000,
+            end: e / 1000,
+            rows: grid.map((time, i) => ({ time: time / 1000, value: buckets[i] ? this.aggregateAcc(buckets[i], fn) : null })),
+        };
     }
     parsePrecision(start, end, precision) {
         if (typeof precision === 'number')

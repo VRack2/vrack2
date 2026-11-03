@@ -5,7 +5,6 @@ import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from './interfaces/IServiceConfig';
 import IServiceMeta, { IJournalToggles } from "./interfaces/IServiceMeta";
 import IDeviceActionRequest from "./interfaces/IDeviceActionRequest";
-import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 import IDevicePushRequest from "./interfaces/IDevicePushRequest";
 export default class Serivce extends Device {
     description(): string;
@@ -226,22 +225,6 @@ export default class Serivce extends Device {
             };
         };
     }>;
-    /**
-     * Read device metric from a container
-     */
-    protected readDeviceMetric(container: Container, data: IDeviceMetricRequest): {
-        relevant: boolean;
-        start: number;
-        end: number;
-        rows: {
-            time: number;
-            value: number | null;
-        }[];
-    };
-    /**
-     * Getting service metric (worker container, VRack2 level)
-     */
-    apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
     /**
      * Live apply of the journal capture toggles (serviceLogSet → ServiceManager
      * → this internal command). Capture checks meta at event time, so the new

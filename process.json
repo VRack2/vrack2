@@ -1,7 +1,6 @@
 {
     "bootstrap": {
-        "ServiceLogger": { "path": "vrack2-core.ServiceLogger", "options": {} },
-        "DeviceMetrics": { "path": "vrack2-core.JournalDbMetrics", "options": {} }
+        "ServiceLogger": { "path": "vrack2-core.ServiceLogger", "options": {} }
     },
     "devices": [
         {

@@ -1,8 +1,6 @@
 import { BasicType, Device, MetricOne } from "vrack2-core";
 import { IContainerStructure } from "vrack2-core/lib/Container";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
-import IGuardMessage from "./interfaces/IGuardMessage";
-import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 export default class System extends Device {
     description(): string;
     outputs(): {
@@ -57,13 +55,8 @@ export default class System extends Device {
         structure: IContainerStructure;
     }): Promise<{}>;
     /**
-     * Getting device metric
-     * Obtaining system metrics. Those that were initialized at the VRack2 level
-    */
-    apiSystemMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
-    /**
      * Returns a list of device vendors
-    */
+     */
     apiVendorList(): Promise<Array<string>>;
     /**
      * Getting the list of devices by its vendor

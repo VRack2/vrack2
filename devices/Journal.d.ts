@@ -132,6 +132,8 @@ export default class Journal extends Device {
     /**
      * Read a device metric from the unified journal — the same dense-grid
      * contract as core `JournalDbMetrics.read()` (vrack-db compatible).
+     * `svc` is a container id: `<service>` (service container),
+     * `worker::<service>` (service process) or `vrack2` (the master itself).
      */
     apiServiceDeviceMetric(data: {
         service: string;
@@ -141,6 +143,7 @@ export default class Journal extends Device {
         precision: string | number;
         func?: string;
     }, gData: IGuardMessage): Promise<any>;
+    readMetric(svc: string, device: string, metric: string, period: string, precision: string | number, func?: string): any;
     static readonly AGGREGATE_FUNCTIONS: string[];
     protected parsePrecision(start: number, end: number, precision: string | number): number;
     protected aggregateAcc(acc: AggAcc, func: string): number | null;

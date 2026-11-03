@@ -1,4 +1,4 @@
-import { Bootstrap, Container, CoreError, Device, ErrorManager, ImportManager, MainProcess, Port, Rule, Metric, MetricOne, JournalDbMetrics } from "vrack2-core";
+import { Bootstrap, Container, CoreError, Device, ErrorManager, ImportManager, MainProcess, Port, Rule, Metric, MetricOne } from "vrack2-core";
 
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
@@ -11,7 +11,6 @@ import IServiceConfig from './interfaces/IServiceConfig';
 import IServiceMeta, { IJournalToggles } from "./interfaces/IServiceMeta";
 import IDeviceActionRequest from "./interfaces/IDeviceActionRequest";
 
-import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 import IDevicePushRequest from "./interfaces/IDevicePushRequest";
 import { ICommandExport } from "./Master";
 
@@ -359,35 +358,6 @@ export default class Serivce extends Device {
 
 
         this.ports.output['register.command'].push({
-            command: 'serviceMetric',
-            short: 'Get service metric',
-            description: 'Getting a service metrics',
-            level: 3,
-            owner: this.type,
-            icon: 'graph-up',
-            handler: this.apiServiceMetric.bind(this),
-            rules: {
-                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
-                metric: Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
-                period: Rule.string().maxLength(120).required().example('now-1h:now').description('VRackDB period'),
-                precision: Rule.string().maxLength(60).required().example('30s').description('VRackDB precision'),
-                func: Rule.string().default('last').maxLength(10).example('last').description('Read function (last,first,min,max,avg,sum)')
-            },
-            return: Rule.object().fields({
-                relevant: Rule.boolean().default(false).example(false).description('result relevance flag'),
-                start: Rule.number().integer().example(1).description('Beginning of the period'),
-                end: Rule.number().integer().example(100).description('End of period '),
-                rows: Rule.array().content(
-                    Rule.object().fields({
-                        time: Rule.number().integer().example(10).description('Time in MTU'),
-                        value: Rule.number().example(12.3223).description('Metric value || null')
-                    }).description('Metric storage object')
-                ).description('Array of metrics')
-            }).description('Metric request result - see vrack-db read documentation')
-        })
-
-        this.ports.output['register.command'].push({
             command: 'serviceParentEvent',
             short: 'Internal Parent Event',
             description: 'Request internal parent event to child service',
@@ -655,22 +625,6 @@ export default class Serivce extends Device {
     }
 
     /**
-     * Read device metric from a container
-     */
-    protected readDeviceMetric(container: Container, data: IDeviceMetricRequest) {
-        if (!container.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF')
-        const DM = container.Bootstrap.getBootClass('DeviceMetrics', JournalDbMetrics) as JournalDbMetrics
-        return DM.read(data.device, data.metric, data.period, data.precision)
-    }
-
-    /**
-     * Getting service metric (worker container, VRack2 level)
-     */
-    async apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-        return this.readDeviceMetric(this.Container, data)
-    }
-
-    /**
      * Live apply of the journal capture toggles (serviceLogSet → ServiceManager
      * → this internal command). Capture checks meta at event time, so the new
      * config takes effect on the very next event.
@@ -796,6 +750,18 @@ export default class Serivce extends Device {
             const value = data.trace && typeof data.trace === 'object' ? data.trace.value : data.trace
             if (typeof value !== 'number' || !Number.isFinite(value)) return
             this.journalMetrics.push({ ts: Date.now(), svc, device: data.device, metric: data.data, value })
+            this.scheduleJournalFlush()
+        })
+        // Process-level metrics: the worker's own container (`worker::<id>`)
+        // devices — the vrack2 `Service` device (memory.*) — join the unified
+        // journal under the container id, so `serviceDeviceMetric` with
+        // service=`worker::<id>` reads them. Container events do not bubble
+        // from child containers, so there is no double capture.
+        this.Container.on('device.metric', (data: { device: string; data: any; trace: any; }) => {
+            if (!this.journalCapture('metrics')) return
+            const value = data.trace && typeof data.trace === 'object' ? data.trace.value : data.trace
+            if (typeof value !== 'number' || !Number.isFinite(value)) return
+            this.journalMetrics.push({ ts: Date.now(), svc: this.Container.id, device: data.device, metric: data.data, value })
             this.scheduleJournalFlush()
         })
     }

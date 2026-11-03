@@ -375,7 +375,7 @@ module.exports = MyDevice;
 
 Для регистрации метрики необходимо переопределяя метод `metrics()`.
 
-Под капотом используется [VRackDB](https://github.com/ponikrf/VRackDB). 
+Каждый вызов `this.metric()` эмитирует событие контейнера `device.metric`. В VRack2 метрики форвардятся на мастер и хранятся в **унифицированном журнале мастера** — устройство `vrack2.Journal` (`journals/vrack2`, таблица `service_metric`, [vrack2-journal-db](https://github.com/ponikrf/vrack2-journal-db)); чтение — команда `serviceDeviceMetric` (`service` — id контейнера: `<svc>`, `worker::<svc>` — процесс сервиса, `vrack2` — мастер). Boot-класс `DeviceMetrics` ([VRackDB](https://github.com/ponikrf/VRackDB)) используется только в standalone-сервисах, запущенных без платформы.
 
 Пример регистрации метрики: 
 
@@ -396,7 +396,7 @@ module.exports = MyDevice;
 Название метрики должно быть уникальным для данного устройства. Строка может содердать следующие символы [a-zA-Z0-9._*]. Не делайте длинных названий. Пример `boilers.{bid}.{metricid}`,`houses.{houseid}.{metricid}`, `memory.{memoryParam}`, `downloads.{fileid}`.
 
 
-VRackDB записывает данные по кругу используя RoundRobin алгоритм. В `retentions` можно указать сразу несколько слоев разной точности и периода - прим.  `1s:6h, 15s:1d`. Если не использовать `retentions` по умолчанию будет использована схема `5s:10m, 1m:2h, 15m:1d, 1h:1w, 6h:1mon, 1d:1y`. 
+В `retentions` можно указать сразу несколько слоев разной точности и периода - прим.  `1s:6h, 15s:1d`. Эти слои работает только в standalone-хранилище `DeviceMetrics` (VRackDB, round-robin); если `retentions` не указан, там применяется схема по умолчанию `5s:10m, 1m:2h, 15m:1d, 1h:1w, 6h:1mon, 1d:1y`. В VRack2 хранение задаёт единообразно журнал — опция устройства `Journal` `metricRetention` (по умолчанию та же схема), per-metric `retentions` игнорируются.
 
 Запись метрики:
 
@@ -412,7 +412,7 @@ VRackDB записывает данные по кругу используя Rou
 
 ![metric-test](./assets/devices/metric-test.png)
 
-Рекомендуется ознакомится с [официальным гайдом](https://github.com/ponikrf/VRackDB/wiki/RU%E2%80%90DOC%E2%80%90V3.0) базы VRackDB
+Подробнее о журнале платформы — [ServiceFile.md](./ServiceFile.md) (раздел мета-настроек `journalEvents`/`journalMetrics`/`journalPorts`); о standalone-хранилище — [официальный гайд VRackDB](https://github.com/ponikrf/VRackDB/wiki/RU%E2%80%90DOC%E2%80%90V3.0)
 
 
 ## Обновляемые данные
