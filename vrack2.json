@@ -53,7 +53,7 @@
             "type": "vrack2.Master",
             "options": {
                 "registerPorts": 7,
-                "commandPorts": 3
+                "commandPorts": 2
             },
             "connections": [
                 "Master.submaster -> ServiceManager.submaster"
@@ -116,14 +116,6 @@
                 "DeviceInfo.worker.add -> WorkersManager.worker2.add",
                 "DeviceInfo.worker.stop -> WorkersManager.worker2.stop",
                 "DeviceInfo.worker.request -> WorkersManager.worker2.request"
-            ]
-        },
-        {
-            "id": "Mcp",
-            "type": "vrack2-mcp.Mcp",
-            "options": {},
-            "connections": [
-                "Mcp.command -> Master.command3"
             ]
         }
     ]
