@@ -1,72 +1,94 @@
-# VRack2 — заметки для ИИ-агента
+# VRack2 — AGENTS.md
 
-VRack2 — рантайм событийно-ориентированных сервисов на Node.js. Сервис — это граф устройств, описанный в JSON, который мастер запускает как отдельный worker.
+Platform vendor devices (`devices/vrack2`). The master loads `vrack2.json` as its own graph. Monorepo: `vrack2-service`. Core: `vrack2-core`.
 
-Эта директория (`devices/vrack2`) — собственный пакет устройств платформы (вендор `vrack2`): мастер, менеджер сервисов, WS-провайдер и т.д. (`devices/Master.js`, `devices/ServiceManager.js`, `devices/Service.js`...). Сервис-файл мастера — `vrack2.json`.
+## Runtime architecture
 
-## Основные понятия
+```
+node ./run/index
+  └─ MainProcess
+       ├─ vrack2.json         ← master's device graph
+       ├─ vrack2.conf.json    ← extra devices merged in
+       │
+       ├─ Master              ← command controller: command%d, register%d, submaster(out)
+       ├─ ServiceManager      ← service lifecycle → WorkersManager
+       ├─ WorkersManager      ← worker_threads pool
+       ├─ Guard               ← auth + routing client → Master.command
+       ├─ WSProvider          ← WS server :4044
+       ├─ Broadcaster         ← fan-out to clients
+       ├─ KeyManager          ← API keys
+       ├─ System              ← system commands
+       ├─ Journal             ← events/metrics/ports (works for stopped services)
+       ├─ DeviceInfo          ← transient device queries into running services
+       │
+       └─ Workers (one per running service)
+            process.json: Master + WorkerProvider + Service
+            Service loads services/<id>.json
+```
 
-- **Устройство (device)** — класс с формальным контрактом:
-  - `inputs()` — входные порты, обработчик `input<Port>`; вызываются пушем извне (порт/соединение/MCP)
-  - `actions()` — экшены, обработчик `action<Name>`; вызов с гарантированным ответом
-  - `checkOptions()` — настройки, валидируются через `Rule` при старте
-  - `shares` — объект состояния устройства, читается извне (`serviceDeviceShares`); обновляется явным `this.render()`
-  - `outputs()` — исходящие порты, пуш `this.ports.output['port'].push(data)` (у стандартного порта сначала проверка `this.ports.output['port'].connected`; `push` return-порта возвращает ответ)
-  - `onRegister()` — инициализация до портов/соединений (обработчики динамических портов)
-  - `onStart()` — запуск (таймеры, подписки)
-  - `onStartAsync()` — асинхронная инициализация (создание таблиц, подключение и т.п.), контейнер её ждет
-- **Сервис** — JSON-файл в `services/<id>.json`: список устройств, их опции и connections (`"A.port -> B.port"`). Рядом `<id>.meta.json`: `autoStart`, `autoReload`, `isolated` и т.д.
-- **Master** — запущенный платформенный сервис (`node ./run/index`), управляет другими сервисами: старт/стоп, статус, ошибки, действия устройств.
-- **Bootstrap** — общие ресурсы сервиса, секция `bootstrap` в сервис-файле. Пример: БД. Устройство получает её через `this.getDB()`, не принимает коннект в конструкторе.
-- **Границы**: устройство — единица переиспользования (вендор + имя, drop-in). Сервис — единица запуска, отказа и консистентности: один worker, общий доступ к ресурсам (например, одной БД), общая судьба при краше.
+**Submaster routing**: unknown command → `submaster` → ServiceManager → worker of target service. Require `service` param in `data`.
 
-## Структура сервис-файла
+## Device contract
 
-```json
-{
-    "devices": [
-        { "id": "Dev1", "type": "vendor.Device", "options": { }, "connections": [] }
-    ],
-    "connections": [],
-    "bootstrap": {
-        "DB": {
-            "path": "vrack2-core.BootDatabaseSqlite",
-            "options": { "file": "./data/<id>.sqlite", "wal": true, "readOnly": false }
-        }
-    }
+```typescript
+class MyDevice extends Device {
+  description(): string                          // self-doc markdown
+  checkOptions(): Record<string, BasicType>      // Rule validation at boot
+  inputs(): Record<string, BasicPort>            // Port.standard() | Port.return(); .dynamic(n)
+  outputs(): Record<string, BasicPort>           // this.ports.output['name'].push(data)
+  actions(): Record<string, ...>                 // request/response handler
+  metrics(): Record<string, MetricOne>           // Metric.one() | Metric.group()
+  shares: object                                 // mutable state, update via this.render()
+  storage: object                                // persists only on this.save()
+
+  onRegister(): void    // before ports wired
+  onStart(): void       // sync init
+  onStartAsync(): void  // async init, container awaits
 }
 ```
 
-- `type` — `вендор.Устройство`, резолвится через `list.json` вендора
-- SQLite не создаёт родительские каталоги — каталог `file` должен существовать
-- `wal: true` — режим WAL (по умолчанию): параллельные читатели, записи в `<file>-wal`
-- Транзакция: `const db = this.getDB(); await db.transaction(async (t) => { ... })`
+- **Port** = push (no response). **Action** = call + response. **Return port** = push returns Promise.
 
-## Структура пакета устройств (вендора)
+
+## File layout
 
 ```
-devices/<vendor>/
-  list.json      — имя устройства → путь к файлу класса
-  <Device>.js    — класс устройства (или src/ + build)
-  vrack2.json    — (у платформенного вендора) сервис-файл самого мастера
-  docs/          — документация
+src/              TypeScript source (edit here)
+  interfaces/     cross-device contracts (IGuardMessage, ICommandRegister, IServiceMeta, …)
+devices/          compiled JS + .d.ts — do NOT edit directly
+vrack2.json       master's primary device graph
+vrack2.conf.json  extra devices merged into the graph
+process.json      container template per service worker
+device-info.json  transient worker graph (DeviceInfo)
+list.json         device name → class path
+ai-docs/api/      per-device command/port API cards
 ```
 
-## Как запускать и тестировать
+## Build
 
-- Мастер: `node ./run/index` (из корня репозитория)
-- Управление через MCP (если доступен) — **3 универсальных тула** (каталог команд открывается во время выполнения):
-  - `commands_list` — таблица всех команд платформы (+ `serviceCommandsList` — список субмастер-команд сервиса)
-  - `command_info {name}` — карточка команды: параметры (name/type/required/example) и форма return
-  - `command_execute {name, data}` — прямое выполнение любой команды; команды, не зарегистрированные на мастере, маршрутизируются в субмастер (ServiceManager → воркер запущенного сервиса, обязателен параметр `service`)
-  - субмастер-команды сервиса (`serviceCommandsList`, `serviceStructure`, `serviceShares`, `serviceDeviceAction/Push/Shares/OutputListen`, `deviceStop/Process/Status`) — сначала `command_execute {name: "serviceCommandsList", data: {service}}` для полного каталога с карточками, затем их `command_execute`; журнал и метрики (`serviceLog*`, `serviceDeviceMetric`) — команды уровня мастера (устройство `Journal`), работают и для остановленных сервисов
-  - команды: `serviceStart/Stop`, `serviceUpdateList` (список), `service` (статус), `serviceErrors/Clear`, `serviceLog/Set/Stats/Clear`, `serviceDeviceAction/Push/Shares/Metric`, `deviceProcess/Stop/Status`, `vendorList/Devices/DeviceInfo`, `apiKeyList/Add/Delete` — имена из `commands_list`
-- Проверка устройства без мастера: `require('vrack2-core')` → `new core.DeviceManager(...)` → `dm.get('vendor.Device')` в чистом процессе (см. `src/boot/DeviceManager.ts` в core).
+```bash
+npx tsc -p devices/vrack2/tsconfig.json   # from vrack2-service/ root
+```
 
-## Практические замечания
+Restart master after changes (require cache).
 
-- `node_modules/vrack2-core` может быть **копией** локального core, а не npm-пакетом: симлинк ломает `ImportManager.importClass('vrack2-core.*')`, т.к. резолв идёт по реальному пути. После изменений в core: пересобрать (`npm run build` в core) и перескопировать в `node_modules/vrack2-core`.
-- Изменения в уже запущенном мастере не подхватываются (require-кеш) — рестарт мастера обязателен.
-- Входной порт и экшен — разные механизмы: порт пушится (`serviceDevicePush`), экшен вызывается с ответом (`serviceDeviceAction`). Смешивать в документации не надо.
-- `this.storage` устройства сохраняется boot-классом `DeviceFileStorage` (в default bootlist core) в `./storage/<id контейнера>/<DeviceID>.json` при явном `this.save()`; без `save()` данные волатильны. Для больших/структурных данных — bootstrap-ресурс (БД).
-- Документация по платформе: `docs/` (Introduction, ServiceFile, Devices, Service, Errors, SystemEvents, Api).
+## MCP tools (the only way to test/interact with devices)
+
+| Tool | Purpose |
+|------|---------|
+| `commands_list` | full command catalog |
+| `command_info {name}` | params + return shape |
+| `command_execute {name, data}` | run command; unknown → submaster auto-routes (pass `service` param) |
+
+Discover service-scoped commands: `command_execute {name: "serviceCommandsList", data: {service: "<id>"}}`
+
+## Key interfaces (src/interfaces/)
+
+| Interface | Fields / purpose |
+|-----------|-----------------|
+| `IGuardMessage` | level, command, data — Guard → Master envelope |
+| `ICommandRegister` | name, level, rules, handler — registered command |
+| `IServiceMeta` | autoStart, autoReload, isolated, journalToggles |
+| `IDeviceActionRequest` | service, device, action, data |
+| `IDevicePushRequest` | service, device, port, data |
+
