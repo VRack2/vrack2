@@ -1,6 +1,6 @@
 # vrack2.ServiceManager
 
-Service lifecycle: discovery in `servicesDirs`, start/stop/check, errors, meta. Each service runs as a separate worker process; this device manages those workers.
+Service lifecycle: discovery in `servicesDirs`, start/stop/check, errors, meta. Each service runs in a separate worker thread (`UniversalWorker`; a separate process when the service meta sets `isolated: true`); this device manages those workers.
 
 Service object: `{ id, errors, filePath, metaPath, configPath, processPath, startedAt?, run, autoReload, deleted }`.
 

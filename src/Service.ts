@@ -313,18 +313,7 @@ export default class Serivce extends Device {
             level: 1000,
             icon:'list-ul',
             owner: this.type,
-            return: Rule.array().content(Rule.object().fields({
-              command: Rule.string().example('commandList').description('Command name/identifier'),
-              description: Rule.string().example('Long description').description('Command description'),
-              level: Rule.number().example(1000).integer().description('Level for access this command'),
-              rules: Rule.array().content(Rule.object().description('Rule Object')).description('Array Rules object for validation data for this command'),
-              owner: Rule.string().example('Long description').description('Owner module of this command'),
-              short: Rule.string().example('Command list').description('Short description (3-5 words)'),
-              icon: Rule.string().example('sd-card').description('Bootstrap icon (without bi- class only end like a "search","sd-card","share" & etc )'),
-              return: Rule.object()
-                .example({ type: 'string', required: 'boolean', default: 'any', rules: 'Array of subrules', example:'any', description:'string' })
-                .description('Rule object of return type'),
-            })).description('Array contain all command for this master'),            
+            return: Rule.object().description('Map of all commands registered in this service: { [commandName]: { command, description, level, rules, owner, short, icon, return } }'),
             handler: this.apiCommandList.bind(this),
         })
         

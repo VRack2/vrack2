@@ -97,16 +97,16 @@ VRack2 представляет собой фреймворк и экосист�
 
  - Обновление документации
  - Переход на vrack2-core v1.1.2
- - Теперь для работы с воркерами используется класс `UniversalWorkers`
+ - Теперь для работы с воркерами используется класс `UniversalWorker`
  - Теперь можно изолировать главный процесс от воркера указав `isolated` в метаданных сервис-файла см. [Работа с LL интерфейсами: I²C, Serial...](./docs/LLHardware.md)
 
 ## изменения 1.0.1
  - Обновление документации
  - Переход на vrack2-core v1.0.4 - все `require()` заменены на `required()`
  - Теперь сервис сам не перезапускается если он закончился работу одной из следующих ошибок
-   - 'CTR_CONF_EXTENDS_PROBLEM'
-   - 'CTR_ERROR_INIT_DEVICE'
-   - 'CTR_DEVICE_PROCESS_EXCEPTION'
-   - 'CTR_DEVICE_PROCESS_PROMISE_EXCEPTION'
-   - 'CTR_ERROR_INIT_CONNECTION'
-   - 'CTR_IGNORE_SERVICE_AUTORELOAD'
+    - 'SLDR_CONF_EXTENDS_PROBLEM'
+    - 'SLDR_ERROR_INIT_DEVICE'
+    - 'CONT_DEVICE_PROCESS_EXCEPTION'
+    - 'CONT_DEVICE_PROCESS_PROMISE_EXCEPTION'
+    - 'SLDR_ERROR_INIT_CONNECTION'
+    - 'CONT_IGNORE_SERVICE_AUTORELOAD'

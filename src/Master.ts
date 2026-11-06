@@ -100,19 +100,10 @@ export default class Master extends Device {
       command: 'commandsList',
       short: 'Master command list',
       description: 'Return all command registered',
-      level: 1000,
+      level: 3,
       icon:'list-ul',
       owner: this.type,
-      return: Rule.array().content(Rule.object().fields({
-        command: Rule.string().example('commandName').description('Command name/identifier'),
-        description: Rule.string().example('Markdown command description').description('Command description'),
-        level: Rule.number().integer().example(3).description('Level for access this command'),
-        rules: Rule.array().example([]).content(Rule.object().description('Rule Object')).description('Array Rules object for validation data for this command'),
-        owner: Rule.string().example('Master').description('Owner devices of this command'),
-        short: Rule.string().example('Short Name').description('Short description (3-5 words)'),
-        icon: Rule.string().example('sd-card').description('Bootstrap icon (without bi- class only end like a "search","sd-card","share" & etc )'),
-        return: Rule.object().example('any').description('Rule object of return type'),
-      })).description('Array contain all command for this master'),
+      return: Rule.object().description('Map of all registered commands: { [commandName]: { command, description, level, rules, owner, short, icon, return } }'),
       handler: this.apiCommandList.bind(this),
     }
   }

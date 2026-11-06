@@ -11,7 +11,7 @@ VRack2 — рантайм событийно-ориентированных се
   - `actions()` — экшены, обработчик `action<Name>`; вызов с гарантированным ответом
   - `checkOptions()` — настройки, валидируются через `Rule` при старте
   - `shares` — объект состояния устройства, читается извне (`serviceDeviceShares`); обновляется явным `this.render()`
-  - `outputs()` — исходящие порты, `this.output.port(data)`
+  - `outputs()` — исходящие порты, пуш `this.ports.output['port'].push(data)` (у стандартного порта сначала проверка `this.ports.output['port'].connected`; `push` return-порта возвращает ответ)
   - `onRegister()` — инициализация до портов/соединений (обработчики динамических портов)
   - `onStart()` — запуск (таймеры, подписки)
   - `onStartAsync()` — асинхронная инициализация (создание таблиц, подключение и т.п.), контейнер её ждет
@@ -58,8 +58,8 @@ devices/<vendor>/
 - Управление через MCP (если доступен) — **3 универсальных тула** (каталог команд открывается во время выполнения):
   - `commands_list` — таблица всех команд платформы (+ `serviceCommandsList` — список субмастер-команд сервиса)
   - `command_info {name}` — карточка команды: параметры (name/type/required/example) и форма return
-  - `command_execute {name, data}` — прямое выполнение любой команды; команды с параметром `service` маршрутизируются в воркер запущенного сервиса
-  - субмастер-команды сервиса (журнал, экшены устройств, метрики, shares) — сначала `command_execute {name: "serviceCommandsList", data: {service}}` для полного каталога с карточками, затем их `command_execute`
+  - `command_execute {name, data}` — прямое выполнение любой команды; команды, не зарегистрированные на мастере, маршрутизируются в субмастер (ServiceManager → воркер запущенного сервиса, обязателен параметр `service`)
+  - субмастер-команды сервиса (`serviceCommandsList`, `serviceStructure`, `serviceShares`, `serviceDeviceAction/Push/Shares/OutputListen`, `deviceStop/Process/Status`) — сначала `command_execute {name: "serviceCommandsList", data: {service}}` для полного каталога с карточками, затем их `command_execute`; журнал и метрики (`serviceLog*`, `serviceDeviceMetric`) — команды уровня мастера (устройство `Journal`), работают и для остановленных сервисов
   - команды: `serviceStart/Stop`, `serviceUpdateList` (список), `service` (статус), `serviceErrors/Clear`, `serviceLog/Set/Stats/Clear`, `serviceDeviceAction/Push/Shares/Metric`, `deviceProcess/Stop/Status`, `vendorList/Devices/DeviceInfo`, `apiKeyList/Add/Delete` — имена из `commands_list`
 - Проверка устройства без мастера: `require('vrack2-core')` → `new core.DeviceManager(...)` → `dm.get('vendor.Device')` в чистом процессе (см. `src/boot/DeviceManager.ts` в core).
 
@@ -68,5 +68,5 @@ devices/<vendor>/
 - `node_modules/vrack2-core` может быть **копией** локального core, а не npm-пакетом: симлинк ломает `ImportManager.importClass('vrack2-core.*')`, т.к. резолв идёт по реальному пути. После изменений в core: пересобрать (`npm run build` в core) и перескопировать в `node_modules/vrack2-core`.
 - Изменения в уже запущенном мастере не подхватываются (require-кеш) — рестарт мастера обязателен.
 - Входной порт и экшен — разные механизмы: порт пушится (`serviceDevicePush`), экшен вызывается с ответом (`serviceDeviceAction`). Смешивать в документации не надо.
-- Данные устройства в `this.storage` — волатильные; персистентность — только через bootstrap-ресурс (БД) или явное файловое хранилище.
+- `this.storage` устройства сохраняется boot-классом `DeviceFileStorage` (в default bootlist core) в `./storage/<id контейнера>/<DeviceID>.json` при явном `this.save()`; без `save()` данные волатильны. Для больших/структурных данных — bootstrap-ресурс (БД).
 - Документация по платформе: `docs/` (Introduction, ServiceFile, Devices, Service, Errors, SystemEvents, Api).

@@ -1,6 +1,6 @@
 # vrack2.Service
 
-Runs inside each service worker (NOT in the master). These are "submaster" commands: the master routes any command whose `data.service` matches a running service into that worker. Always pass `service` = service id.
+Runs inside each service worker (NOT in the master). These are "submaster" commands: the master forwards any command it does not have registered itself to the submaster (ServiceManager), which routes it (by the `service` param) into the matching running service worker. Always pass `service` = service id.
 
 ## serviceCommandsList
 Catalog of all commands registered in this service (full rule cards). Call it first to discover the service's command set.
@@ -47,4 +47,5 @@ One-shot capture of the next data emitted on a device output port.
 > Journal and metrics commands (`serviceLog*`, `serviceDeviceMetric`) are NOT submaster commands — they belong to the master's `Journal` device, see [Journal.md](./Journal.md).
 
 ## internal (level 0, hidden from catalogs)
-`serviceStart`, `serviceCheck`, `serviceStop`, `serviceParentEvent` — invoked by ServiceManager, not by clients.
+`serviceStart`, `serviceCheck`, `serviceStop`, `serviceJournalSet` — invoked by ServiceManager, not by clients.
+`serviceParentEvent` (level 1) — internal parent-container event forwarded into the service container (`Service.parent.event`).

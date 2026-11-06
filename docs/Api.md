@@ -53,23 +53,29 @@
 }
 ```
 
-**Ответ (пример):**
+**Ответ (пример, шифрованный ключ):**
 ```json
 {
   "cipher": true,
   "verify": "9u49ipjeirhh",
-  "serverPub": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
-  "level": 3,
-  "authorize": false
+  "serverPub": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
 }
 ```
 
-- Если поле `verify` присутствует — требуется **продолжить аутентификацию через `apiPrivateAuth`**
-  (отправить `verify`, зашифрованный в GCM-кадре, см. раздел «Шифрование»).
+**Ответ (пример, обычный ключ):**
+```json
+{
+  "cipher": false,
+  "level": 3
+}
+```
+
+- Если поле `verify` присутствует — аутентификация **не завершена**, требуется
+  **продолжить её через `apiPrivateAuth`** (отправить `verify`, зашифрованный в GCM-кадре, см. раздел «Шифрование»).
 - `serverPub` — публичный ключ P-256 сервера (PEM), возвращается для асимметричных ключей
   и нужен для вывода ключа канала (ECDH).
-- Поле `level` указывает ваш текущий уровень доступа: чем меньше число, тем больше привилегий
-  (0 — суперадминистратор).
+- Поле `level` приходит только при завершении аутентификации обычным ключом и указывает ваш текущий
+  уровень доступа: чем меньше число, тем больше привилегий (0 — суперадминистратор).
   - 1 - Администратор
   - 2 - Оператор
   - 3 - Диспетчер
@@ -97,8 +103,7 @@
 ```json
 {
   "cipher": true,
-  "level": 3,
-  "authorize": true
+  "level": 3
 }
 ```
 
@@ -136,6 +141,7 @@
 Уровень доступа: **3**
 
 Возвращает полный список доступных команд с описанием, уровнем доступа и правилами валидации.
+Результат — объект-словарь, ключи которого — имена команд (внутренние команды уровня 0 из списка скрыты).
 
 **Запрос:**
 ```json
@@ -147,18 +153,32 @@
 
 **Ответ (фрагмент):**
 ```json
-[
-  {
+{
+  "channelJoin": {
     "command": "channelJoin",
     "description": "Provider client join to broadcast channel",
     "level": 3,
-    "rules": [],
+    "rules": {
+      "channel": {
+        "type": "string",
+        "require": true,
+        "rules": [{ "name": "maxLength", "args": 200 }],
+        "example": "path.to.channel",
+        "description": "Channel path like a dot style"
+      }
+    },
     "owner": "Broadcaster",
-    "short": "Join channel",
-    "icon": "share",
-    "return": {}
+    "short": "Join to broadcast channel",
+    "icon": "send-plus",
+    "return": {
+      "type": "string",
+      "require": false,
+      "default": "success",
+      "rules": [],
+      "description": "Always returns success"
+    }
   }
-]
+}
 ```
 
 ## Работа с каналами (Pub/Sub)

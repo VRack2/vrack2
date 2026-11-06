@@ -6,6 +6,7 @@ Access rule: client level must be <= command level. Level 1 = admin, 3 = regular
 
 ## commandsList
 Catalog of all registered commands (level-0 internal commands are hidden).
+- level: 3 (guest level 1000 cannot call it)
 - params: none
 - returns: `{ [commandName]: { command, description, level, rules, owner, short, icon, return } }`
 - use: call first to discover the available command set.

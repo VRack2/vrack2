@@ -136,11 +136,10 @@ export default class Guard extends Device {
             },
             return: Rule.object().fields({
                 cipher: Rule.boolean().default(false).description('Does authorization require encryption?'),
-                verify: Rule.string().example('9u49ipjeirhh').description('If this line is specified, you need to go through additional authorization with encryption'),
+                verify: Rule.string().example('9u49ipjeirhh').description('Present for cipher keys: challenge nonce to return encrypted via apiPrivateAuth'),
                 serverPub: Rule.string().example('-----BEGIN PUBLIC KEY-----').description("Server P-256 public key (PEM) for the asymmetric channel; present when the key is asymmetric"),
-                level: Rule.number().example(3).description('If the level is specified, then authorization was successful'),
-                authorize: Rule.boolean().default(false).description('If the level is specified, then authorization was successful.'),
-            }).description('Success authorized result')
+                level: Rule.number().example(3).description('Present when authorization is complete (plain key): the client access level'),
+            }).description('cipher key: { verify, cipher: true, serverPub? } — continue with apiPrivateAuth; plain key: { level, cipher: false } — auth complete')
         })
 
         this.ports.output['register.command'].push({
@@ -156,9 +155,8 @@ export default class Guard extends Device {
             },
             return:  Rule.object().fields({
                 cipher: Rule.boolean().default(true).description('Does authorization require encryption?'),
-                level: Rule.number().example(3).description('If the level is specified, then authorization was successful'),
-                authorize: Rule.boolean().default(true).description('If the level is specified, then authorization was successful.'),
-            }).description('Success authorized result')
+                level: Rule.number().example(3).description('The client access level — authorization is complete and the channel is encrypted'),
+            }).description('Success authorized result: { level, cipher: true }')
         })
     }
 

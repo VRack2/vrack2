@@ -332,9 +332,9 @@ const { Device, Port, Metric } = require("vrack2-core");
     /** Должен вернуть список метрик */
     metrics() {
         return {
-            'cpu.user': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Потребление CPU пользователем'),
-            'cpu.system': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Потребление CPU системой'),
-            'cpu.total': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Общее потребление')
+            'cpu.user': Metric.one().descriptions('Потребление CPU пользователем'),
+            'cpu.system': Metric.one().descriptions('Потребление CPU системой'),
+            'cpu.total': Metric.one().descriptions('Общее потребление')
         }
     }
 
@@ -342,7 +342,7 @@ const { Device, Port, Metric } = require("vrack2-core");
 
 VRack2 для хранение метрик использует **унифицированный журнал мастера** — устройство `vrack2.Journal` ([vrack2-journal-db](https://github.com/ponikrf/vrack2-journal-db), стор `journals/vrack2`, таблица `service_metric`); чтение — команда `serviceDeviceMetric` (`service` — id контейнера: `<svc>`, `worker::<svc>`, `vrack2`).
 
-Определение `Metric.inS()` сообщает, что время метрики храниться в секундах. `retentions('1s:10m, 5s:2h, 15s:1d')`- определяет длительность и точность хранения — но только в standalone-сервисах (хранилище `DeviceMetrics`/VRackDB); в VRack2 слои хранения задаёт журнал одним параметром `metricRetention`.
+`Metric.one()` объявляет одиночную метрику — только её метаданные (описание, дополнительную информацию). Хранение и слои retention определяет не устройство, а хранилище: в VRack2 их единообразно задаёт журнал параметром `metricRetention` устройства `Journal`.
 
 Подробнее о журнале платформы — [ServiceFile.md](./ServiceFile.md); о standalone-хранилище — документация [VRackDB](https://github.com/ponikrf/VRackDB/wiki/RU%E2%80%90DOC%E2%80%90V3.0).
 
@@ -366,9 +366,9 @@ class CpuInfo extends Device {
     /** Должен вернуть список метрик */
     metrics() {
         return {
-            'cpu.user': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Потребление CPU пользователем'),
-            'cpu.system': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Потребление CPU системой'),
-            'cpu.total': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Общее потребление')
+            'cpu.user': Metric.one().descriptions('Потребление CPU пользователем'),
+            'cpu.system': Metric.one().descriptions('Потребление CPU системой'),
+            'cpu.total': Metric.one().descriptions('Общее потребление')
         }
     }
 

@@ -1,6 +1,6 @@
 # vrack2.DeviceInfo
 
-Fresh device metadata: vendor list, device list per vendor, full device contract. Each query runs in a throwaway isolated worker (DeviceWorker) so class require-caching can never return stale ports/actions/options.
+Fresh device metadata: vendor list, device list per vendor, full device contract. Each query runs in a throwaway worker thread (DeviceWorker) so class require-caching can never return stale ports/actions/options.
 
 ## vendorList
 - params: none
