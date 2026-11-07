@@ -341,7 +341,7 @@ export default class Guard extends Device {
      * @param data Client information
     */
     inputClientsUnregister(data: IRegisteredClient) {
-        if (!this.guardedClients[data.providerId] || this.guardedClients[data.providerId][data.clientId]) return
+        if (!this.guardedClients[data.providerId] || !this.guardedClients[data.providerId][data.clientId]) return
         this.Container.emit('Guard.client.unregister', data)
         delete this.guardedClients[data.providerId][data.clientId]
     }

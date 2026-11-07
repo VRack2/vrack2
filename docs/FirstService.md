@@ -463,7 +463,7 @@ module.exports = CpuInfo;
     "group": "сервисы",
     "autoStart": true,
     "autoReload": true,
-    "description": "Позволяет посмотреть информацию о потреблении CPU",
+    "description": "Позволяет посмотреть информацию о потреблении CPU"
 }
 ```
 

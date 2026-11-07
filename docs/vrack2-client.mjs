@@ -20,7 +20,7 @@
  *   node docs/vrack2-client.mjs --key <KID> --private "$(cat client.key.pem)"
  *
  * Параметры (флаги или переменные окружения):
- *   --url / VRACK2_URL      адрес мастера, по умолчанию ws://localhost:4404
+ *   --url / VRACK2_URL      адрес мастера, по умолчанию ws://localhost:4044
  *   --key / VRACK2_KEY      KID (идентификатор ключа), по умолчанию `default`
  *   --private / VRACK2_PRIVATE  приватный ключ PEM (только для ECDH-ключей)
  *   --command / --data       любая команда вместо `serviceList` и её data (JSON)
@@ -34,7 +34,7 @@ import crypto from 'node:crypto';
 // Аргументы
 // ---------------------------------------------------------------------------
 const arg = (name, def) => { const i = process.argv.indexOf(`--${name}`); return i >= 0 ? process.argv[i + 1] : def; };
-const URL_   = arg('url', process.env.VRACK2_URL || 'ws://localhost:4404');
+const URL_   = arg('url', process.env.VRACK2_URL || 'ws://localhost:4044');
 const KEY    = arg('key', process.env.VRACK2_KEY || 'default');
 const PRIVATE = arg('private', process.env.VRACK2_PRIVATE || '');
 const COMMAND = arg('command', 'serviceList');

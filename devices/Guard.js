@@ -301,7 +301,7 @@ class Guard extends vrack2_core_1.Device {
      * @param data Client information
     */
     inputClientsUnregister(data) {
-        if (!this.guardedClients[data.providerId] || this.guardedClients[data.providerId][data.clientId])
+        if (!this.guardedClients[data.providerId] || !this.guardedClients[data.providerId][data.clientId])
             return;
         this.Container.emit('Guard.client.unregister', data);
         delete this.guardedClients[data.providerId][data.clientId];

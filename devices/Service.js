@@ -268,7 +268,7 @@ class Serivce extends vrack2_core_1.Device {
             command: 'serviceCommandsList',
             short: 'Master of service command list',
             description: 'Return all command in service registered',
-            level: 1000,
+            level: 3,
             icon: 'list-ul',
             owner: this.type,
             return: vrack2_core_1.Rule.object().description('Map of all commands registered in this service: { [commandName]: { command, description, level, rules, owner, short, icon, return } }'),

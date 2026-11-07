@@ -228,22 +228,23 @@
 После подписки вам будут приходить сообщения типа:
 
 ```json
-{ 
-   "command":"broadcast",
-   "channel":"manager.service.smart-light.update",
-   "data":{
-        "id":"smart-light",
-        "errors":0,
-        "run":false,
-        "deleted":false,
-        "filePath":"devices/vrack2-example/services/smart-light.json",
-        "metaPath":"devices/vrack2-example/services/smart-light.meta.json",
-        "configPath":"devices/vrack2-example/services/smart-light.conf.json",
-        "processPath":"devices/vrack2-example/services/smart-light.process.json",
-        "autoReload":false,
-        "startedAt":1761064162223},
-        "target":"manager.service",
-        "providerId":1,
-        "clientId":3
-    }
+{
+    "command": "broadcast",
+    "channel": "manager.service.smart-light.update",
+    "data": {
+        "id": "smart-light",
+        "errors": 0,
+        "run": false,
+        "deleted": false,
+        "filePath": "devices/vrack2-example/services/smart-light.json",
+        "metaPath": "devices/vrack2-example/services/smart-light.meta.json",
+        "configPath": "devices/vrack2-example/services/smart-light.conf.json",
+        "processPath": "devices/vrack2-example/services/smart-light.process.json",
+        "autoReload": false,
+        "startedAt": 1761064162223
+    },
+    "target": "manager.service",
+    "providerId": 1,
+    "clientId": 3
+}
 ```

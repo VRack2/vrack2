@@ -58,9 +58,10 @@ Top-Master commands (owner → device):
 | Owner | Commands |
 |-------|----------|
 | ServiceManager | `serviceList`, `serviceUpdateList`, `service`, `serviceMeta`, `serviceStart`, `serviceStop`, `serviceCheck`, `serviceErrors(Clear)` |
-| Master | `vendorList`, `vendorDevices`, `vendorDeviceInfo`, `structureGet/Update`, `commandsList` |
+| Master | `commandsList` |
+| DeviceInfo | `vendorList`, `vendorDevices`, `vendorDeviceInfo` (executed in a transient worker — cache-free device meta) |
+| System | `systemInfo`, `structureGet`, `structureUpdate` |
 | KeyManager | `apiKey`, `apiKeyList`, `apiKeyAdd`, `apiKeyUpdate`, `apiKeyDelete` |
-| System | `systemInfo` |
 | Journal | `serviceLog`, `serviceLogSet`, `serviceLogStats`, `serviceLogClear`, `serviceDeviceMetric` |
 
 Submaster commands (inside a running service): `serviceCommandsList`, then `serviceStructure`, `serviceDeviceAction`, `serviceDevicePush`, `serviceDeviceShares`, `deviceProcess`, `deviceStop`, `deviceStatus`, …

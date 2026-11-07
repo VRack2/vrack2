@@ -180,8 +180,8 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'list-stars',
             handler: this.apiServiceList.bind(this),
-            return: vrack2_core_1.Rule.array().content(this.ServiceRule)
-                .description('List array of services configs')
+            return: vrack2_core_1.Rule.object()
+                .description('Map of all services: { [serviceId]: IServiceConfig + IServiceMeta }')
         });
         this.ports.output['register.command'].push({
             command: 'serviceUpdateList',
@@ -191,8 +191,8 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'arrow-repeat',
             handler: this.apiServiceListUpdate.bind(this),
-            return: vrack2_core_1.Rule.object().fields({ serviceID: this.ServiceRule })
-                .description('List array of services configs')
+            return: vrack2_core_1.Rule.object()
+                .description('Map of all services (after rescan): { [serviceId]: IServiceConfig + IServiceMeta }')
         });
         this.ports.output['register.command'].push({
             command: 'serviceStart',

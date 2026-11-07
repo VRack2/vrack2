@@ -211,8 +211,8 @@ export default class ServiceManager extends Device {
       owner: this.type,
       icon: 'list-stars',
       handler: this.apiServiceList.bind(this),
-      return: Rule.array().content(this.ServiceRule)
-      .description('List array of services configs')
+      return: Rule.object()
+      .description('Map of all services: { [serviceId]: IServiceConfig + IServiceMeta }')
     })
 
     this.ports.output['register.command'].push({
@@ -223,8 +223,8 @@ export default class ServiceManager extends Device {
       owner: this.type,
       icon: 'arrow-repeat',
       handler: this.apiServiceListUpdate.bind(this),
-      return: Rule.object().fields({ serviceID: this.ServiceRule })
-      .description('List array of services configs')
+      return: Rule.object()
+      .description('Map of all services (after rescan): { [serviceId]: IServiceConfig + IServiceMeta }')
     })
 
     this.ports.output['register.command'].push({
