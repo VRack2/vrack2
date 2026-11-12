@@ -409,6 +409,10 @@ class Serivce extends vrack2_core_1.Device {
             this.bindJournal();
             MainProcessEx.run();
             this.bindContainerDeviceEvents();
+            // Process-level lifecycle event: recorded under svc=`worker::<id>` so the
+            // service process shows start/stop in the unified journal (replacing the
+            // per-service device_log that the removed ServiceLogger used to hold).
+            this.notify('service started', { service: this.Serviceinfo.id });
         });
     }
     /**
@@ -631,14 +635,15 @@ class Serivce extends vrack2_core_1.Device {
         return __awaiter(this, void 0, void 0, function* () {
             const service = this.normalizeServiceBootstrap(vrack2_core_1.ImportManager.importJSON(info.filePath));
             // Unified VRack2-level journal: the per-service journal boot classes
-            // (port_log / metrics stores) are disabled — events, port pushes and
-            // metrics are forwarded to the master Journal device instead (see
-            // bindJournal / flushJournal). A `null` entry removes the id from the
-            // merged bootlist (Bootstrap.mergeBootList).
+            // (port_log / metrics / per-container device_log stores) are disabled —
+            // events, port pushes and metrics are forwarded to the master Journal
+            // device instead (see bindJournal / flushJournal). A `null` entry
+            // removes the id from the merged bootlist (Bootstrap.mergeBootList).
             if (!service.bootstrap)
                 service.bootstrap = {};
             service.bootstrap.PortLogger = null;
             service.bootstrap.DeviceMetrics = null;
+            service.bootstrap.ServiceLogger = null;
             const MainProcessClass = yield vrack2_core_1.ImportManager.importClass(this.options.mainProcessPath);
             const MainProcessEx = new MainProcessClass(Object.assign({ id: info.id, service }, (start ? { confFile: info.configPath } : {})));
             MainProcessEx.Container.parent = this.Container;
@@ -711,11 +716,15 @@ class Serivce extends vrack2_core_1.Device {
             this.journalMetrics.push({ ts: Date.now(), svc, device: data.device, metric: data.data, value });
             this.scheduleJournalFlush();
         });
-        // Process-level metrics: the worker's own container (`worker::<id>`)
-        // devices — the vrack2 `Service` device (memory.*) — join the unified
-        // journal under the container id, so `serviceDeviceMetric` with
-        // service=`worker::<id>` reads them. Container events do not bubble
-        // from child containers, so there is no double capture.
+        // Process-level capture: the worker's own container (`worker::<id>`)
+        // devices — the vrack2 `Service` device (memory.*), Master,
+        // WorkerProvider — join the unified journal under the container id, so
+        // `serviceDeviceMetric` / `serviceLog` with service=`worker::<id>` read
+        // them. Container events do not bubble from child containers (the
+        // service container), so there is no double capture. This replaces the
+        // `ServiceLogger` boot class (removed from process.json), whose events
+        // used to go only into the per-service `journals/worker::<id>/device_log`
+        // store that no platform command read.
         this.Container.on('device.metric', (data) => {
             if (!this.journalCapture('metrics'))
                 return;
@@ -723,6 +732,28 @@ class Serivce extends vrack2_core_1.Device {
             if (typeof value !== 'number' || !Number.isFinite(value))
                 return;
             this.journalMetrics.push({ ts: Date.now(), svc: this.Container.id, device: data.device, metric: data.data, value });
+            this.scheduleJournalFlush();
+        });
+        for (const channel in channels) {
+            const type = channels[channel];
+            this.Container.on(channel, (data) => {
+                if (!this.journalCapture('events'))
+                    return;
+                this.journalEvents.push({ ts: Date.now(), svc: this.Container.id, device: data.device, event: type, data: data.data, trace: this.makeBroadcastTrace(data.trace) });
+                this.scheduleJournalFlush();
+            });
+        }
+        // Process crash signal: the worker's own `uncaughtException` is emitted
+        // on this.Container as `system.error` (see onStart) — it is not a device
+        // channel, so the `channels` loop above misses it. Journal it explicitly
+        // under the worker container id (`event: 'error'`) so a crashing service
+        // process is visible through `serviceLog service="worker::<id>"`.
+        this.Container.on('system.error', (error) => {
+            if (!this.journalCapture('events'))
+                return;
+            // Stable event name in `data`; the error payload travels in `trace`.
+            const trace = error instanceof Error ? vrack2_core_1.CoreError.objectify(error) : { message: String(error) };
+            this.journalEvents.push({ ts: Date.now(), svc: this.Container.id, device: this.id, event: 'error', data: 'worker uncaught error', trace });
             this.scheduleJournalFlush();
         });
     }
@@ -853,6 +884,7 @@ class Serivce extends vrack2_core_1.Device {
      */
     apiServiceStop(data, gData) {
         return __awaiter(this, void 0, void 0, function* () {
+            this.notify('service stopping', { service: this.Serviceinfo.id });
             return this.shutdown();
         });
     }
@@ -907,6 +939,9 @@ class Serivce extends vrack2_core_1.Device {
      * Терминальная ошибка сервиса: уведомление + завершение через единственную точку shutdown()
      */
     serviceTerminate(error) {
+        // Terminal service failure: stable event name in `data`, the failure
+        // payload (the Error) in `trace`; svc already scopes it to worker::<id>.
+        this.error('service terminated', error);
         return this.shutdown(error);
     }
     getNextCaptureIndex() {

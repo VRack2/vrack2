@@ -1,7 +1,4 @@
 {
-    "bootstrap": {
-        "ServiceLogger": { "path": "vrack2-core.ServiceLogger", "options": {} }
-    },
     "devices": [
         {
             "id": "Master",
