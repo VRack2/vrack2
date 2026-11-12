@@ -70,7 +70,7 @@ class WorkerProvider extends vrack2_core_1.Device {
         const ignore = (signal) => {
             if (!notified) {
                 notified = true;
-                this.terminal(`Worker received ${signal}: shutdown is delegated to VRack2, ignoring`, {});
+                this.terminal('worker shutdown signal delegated to VRack2, ignoring', { signal });
             }
         };
         process.on('SIGINT', () => ignore('SIGINT'));

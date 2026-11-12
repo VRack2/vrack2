@@ -1,8 +1,13 @@
-import { Device, Metric, MetricOne, Port, Rule } from "vrack2-core";
+import { Device, ErrorManager, Metric, MetricOne, Port, Rule } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 import WebSocket from "ws"
 import IProviderMessage from "./interfaces/IProviderMessage";
+
+ErrorManager.register('WSProvider', 'WS_SERVER_ERROR',
+  'The WebSocket server reported an error', {
+  port: Rule.number().required().example(4044).description('Websocket server port')
+})
 
 export default class WSProvider extends Device {
   description(): string {
@@ -191,7 +196,7 @@ export default class WSProvider extends Device {
   serverOnError(error: Error){
     console.error('Error websocket server')
     console.error(error)
-    this.error(`Provider '${this.provider}' error`, error)
+    this.error('websocket server error', ErrorManager.make('WS_SERVER_ERROR', { port: this.options.port }).add(error))
   }
 
   /**

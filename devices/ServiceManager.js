@@ -36,6 +36,25 @@ vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SUMBASTER_COMMAND_NOT_
 vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SERVICE_STOP_TIMEOUT', 'Graceful service stop timed out, the worker was force-terminated. Its container (and possibly journal tail) may not have shut down cleanly', {
     id: vrack2_core_1.Rule.string().example('testid').description('Service ID')
 });
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SERVICE_STOP_ERROR', 'Failed to stop a running service during shutdown (best-effort: the remaining services are still stopped)', {
+    id: vrack2_core_1.Rule.string().example('testid').description('Service ID')
+});
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_META_SAVE_ERROR', 'Failed to persist the service meta (journal toggles) to disk', {
+    service: vrack2_core_1.Rule.string().example('testid').description('Service ID'),
+    path: vrack2_core_1.Rule.string().example('path/to/x.meta.json').description('Meta file path')
+});
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_JOURNAL_APPLY_ERROR', 'Failed to live-apply journal capture toggles to a running service', {
+    service: vrack2_core_1.Rule.string().example('testid').description('Service ID')
+});
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SERVICE_CONVERT_ERROR', 'Failed to convert a service file into the internal structure (autoReload watch)', {
+    service: vrack2_core_1.Rule.string().example('testid').description('Service ID'),
+    dir: vrack2_core_1.Rule.string().example('./services').description('Services dir'),
+    filename: vrack2_core_1.Rule.string().example('test-service.json').description('Service file name')
+});
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SUBMASTER_EVENT_ERROR', 'Failed to forward a parent-container event to the service via submaster', {
+    service: vrack2_core_1.Rule.string().example('testid').description('Service ID'),
+    channel: vrack2_core_1.Rule.string().example('Service.parent.event').description('Container channel')
+});
 class ServiceManager extends vrack2_core_1.Device {
     constructor() {
         super(...arguments);
@@ -275,7 +294,7 @@ class ServiceManager extends vrack2_core_1.Device {
                     yield this.apiServiceStop({ service: id });
                 }
                 catch (error) {
-                    this.error(`Failed to stop service ${id} during shutdown`, error);
+                    this.error('service stop failed during shutdown', vrack2_core_1.ErrorManager.make('SM_SERVICE_STOP_ERROR', { id }).add(error));
                 }
             }
         });
@@ -607,14 +626,14 @@ class ServiceManager extends vrack2_core_1.Device {
                 fs_1.default.writeFileSync(conf.metaPath, JSON.stringify(raw, null, '\t'));
             }
             catch (error) {
-                this.error('Error save service meta journal', error);
+                this.error('save service meta journal', vrack2_core_1.ErrorManager.make('SM_META_SAVE_ERROR', { service, path: conf.metaPath }).add(error));
             }
             if (conf.run && this.servicesWorker[service]) {
                 try {
                     yield this.inputSubmaster(this.makeServiceRequest('serviceJournalSet', { service, journal: journal !== null && journal !== void 0 ? journal : null }));
                 }
                 catch (error) {
-                    this.error('Error live-apply service journal', error);
+                    this.error('apply service journal', vrack2_core_1.ErrorManager.make('SM_JOURNAL_APPLY_ERROR', { service }).add(error));
                 }
             }
             return { journal: {
@@ -700,7 +719,7 @@ class ServiceManager extends vrack2_core_1.Device {
                         // Добавляем его к списку ошибок сервиса
                         this.addError(res[0], error);
                         if (error instanceof Error)
-                            this.error('Error generate service file', error);
+                            this.error('convert service file', vrack2_core_1.ErrorManager.make('SM_SERVICE_CONVERT_ERROR', { service: res[0], dir: dirConf.dir, filename }).add(error));
                     }
                 }), 500));
             }));
@@ -890,7 +909,7 @@ class ServiceManager extends vrack2_core_1.Device {
                 yield this.inputSubmaster(iReq);
             }
             catch (err) {
-                this.error("Error send submaser container event", err);
+                this.error('send submaster container event', vrack2_core_1.ErrorManager.make('SM_SUBMASTER_EVENT_ERROR', { service, channel }).add(err));
             }
         });
     }

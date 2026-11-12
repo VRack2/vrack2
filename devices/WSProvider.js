@@ -14,6 +14,9 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
 const ws_1 = __importDefault(require("ws"));
+vrack2_core_1.ErrorManager.register('WSProvider', 'WS_SERVER_ERROR', 'The WebSocket server reported an error', {
+    port: vrack2_core_1.Rule.number().required().example(4044).description('Websocket server port')
+});
 class WSProvider extends vrack2_core_1.Device {
     constructor() {
         super(...arguments);
@@ -188,7 +191,7 @@ class WSProvider extends vrack2_core_1.Device {
     serverOnError(error) {
         console.error('Error websocket server');
         console.error(error);
-        this.error(`Provider '${this.provider}' error`, error);
+        this.error('websocket server error', vrack2_core_1.ErrorManager.make('WS_SERVER_ERROR', { port: this.options.port }).add(error));
     }
     /**
      * Send data to client

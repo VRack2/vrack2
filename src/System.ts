@@ -1,8 +1,19 @@
-import { BasicType, Device, DeviceManager, Metric, MetricOne, Port, Rule, StructureStorage } from "vrack2-core";
+import { BasicType, Device, DeviceManager, ErrorManager, Metric, MetricOne, Port, Rule, StructureStorage } from "vrack2-core";
 import { IContainerStructure } from "vrack2-core/lib/Container";
 import os from "os"
 import process from "process"
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
+
+ErrorManager.register('System', 'SYS_SHUTDOWN_TIMEOUT',
+  'Graceful shutdown did not finish within shutdownTimeout; the process force-exits', {
+  timeout: Rule.number().required().example(10000).description('Shutdown timeout, ms')
+})
+
+ErrorManager.register('System', 'SYS_SHUTDOWN_STOP_FAILED',
+  'Container.stopAll() failed during graceful shutdown', {})
+
+ErrorManager.register('System', 'SYS_SHUTDOWN_DESTROY_FAILED',
+  'Bootstrap.destroyAll() failed during graceful shutdown', {})
 
 export default class System extends Device {
 
@@ -151,20 +162,20 @@ export default class System extends Device {
         return
       }
       stoppingAt = Date.now()
-      this.terminal(`Received ${signal} — shutting down container`, {})
+      this.terminal('shutdown signal received', { signal })
       // Watchdog: if teardown hangs (a device onStopAsync never resolves),
       // force-exit. unref so it doesn't hold the loop when teardown is fast.
       const watchdog = setTimeout(() => {
-        this.error('Graceful shutdown timed out — force exit', {})
+        this.error('graceful shutdown timed out — force exit', ErrorManager.make('SYS_SHUTDOWN_TIMEOUT', { timeout: this.options.shutdownTimeout }))
         process.exit(1)
       }, this.options.shutdownTimeout)
       watchdog.unref?.()
       let hadError = false
       Promise.resolve()
         .then(() => this.Container.stopAll())
-        .catch((e) => { hadError = true; this.error('Container.stopAll failed during shutdown', e as Error) })
+        .catch((e) => { hadError = true; this.error('container stopAll failed during shutdown', ErrorManager.make('SYS_SHUTDOWN_STOP_FAILED').add(e as Error)) })
         .then(() => this.Container.Bootstrap.destroyAll())
-        .catch((e) => { hadError = true; this.error('Bootstrap.destroyAll failed during shutdown', e as Error) })
+        .catch((e) => { hadError = true; this.error('bootstrap destroyAll failed during shutdown', ErrorManager.make('SYS_SHUTDOWN_DESTROY_FAILED').add(e as Error)) })
         .then(() => { clearTimeout(watchdog); process.exit(hadError ? 1 : 0) })
     }
     process.on('SIGINT', () => handler('SIGINT'))

@@ -76,7 +76,7 @@ export default class WorkerProvider extends Device {
         const ignore = (signal: string) => {
             if (!notified) {
                 notified = true
-                this.terminal(`Worker received ${signal}: shutdown is delegated to VRack2, ignoring`, {})
+                this.terminal('worker shutdown signal delegated to VRack2, ignoring', { signal })
             }
         }
         process.on('SIGINT', () => ignore('SIGINT'))

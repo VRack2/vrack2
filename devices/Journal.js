@@ -25,6 +25,9 @@ vrack2_core_1.ErrorManager.register('Journal', 'JRN_POINTS_LIMIT', 'Read window 
     limit: vrack2_core_1.Rule.number().required().description('Configured maxReadPoints'),
 });
 vrack2_core_1.ErrorManager.register('Journal', 'JRN_SERVICE_MANAGER_NF', 'ServiceManager device not found in this container (serviceLogSet needs it to persist and live-toggle the journal)');
+vrack2_core_1.ErrorManager.register('Journal', 'JRN_APPEND_FAILED', 'Journal-db append failed; the row is dropped, capture continues', {
+    stage: vrack2_core_1.Rule.string().example('own-event').description('Which append path failed (own-event | own-metric | worker-batch)'),
+});
 /**
  * Journal — the unified VRack2-level journal of every service: device channel
  * events, outgoing port pushes and device metrics, captured in the worker and
@@ -137,7 +140,7 @@ class Journal extends vrack2_core_1.Device {
                         });
                     }
                     catch (e) {
-                        this.error('Journal own-event append failed', e);
+                        this.error('journal own-event append failed', vrack2_core_1.ErrorManager.make('JRN_APPEND_FAILED', { stage: 'own-event' }).add(e));
                     }
                 });
             }
@@ -160,7 +163,7 @@ class Journal extends vrack2_core_1.Device {
                     });
                 }
                 catch (e) {
-                    this.error('Journal own-metric append failed', e);
+                    this.error('journal own-metric append failed', vrack2_core_1.ErrorManager.make('JRN_APPEND_FAILED', { stage: 'own-metric' }).add(e));
                 }
             });
         });
@@ -209,7 +212,7 @@ class Journal extends vrack2_core_1.Device {
             }
         }
         catch (e) {
-            this.error('Journal append failed', e);
+            this.error('journal worker-batch append failed', vrack2_core_1.ErrorManager.make('JRN_APPEND_FAILED', { stage: 'worker-batch' }).add(e));
         }
     }
     /**

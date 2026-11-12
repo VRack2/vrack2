@@ -43,6 +43,35 @@ ErrorManager.register('ServiceManager', 'SM_SERVICE_STOP_TIMEOUT',
   id: Rule.string().example('testid').description('Service ID')
 })
 
+ErrorManager.register('ServiceManager', 'SM_SERVICE_STOP_ERROR',
+  'Failed to stop a running service during shutdown (best-effort: the remaining services are still stopped)', {
+  id: Rule.string().example('testid').description('Service ID')
+})
+
+ErrorManager.register('ServiceManager', 'SM_META_SAVE_ERROR',
+  'Failed to persist the service meta (journal toggles) to disk', {
+  service: Rule.string().example('testid').description('Service ID'),
+  path: Rule.string().example('path/to/x.meta.json').description('Meta file path')
+})
+
+ErrorManager.register('ServiceManager', 'SM_JOURNAL_APPLY_ERROR',
+  'Failed to live-apply journal capture toggles to a running service', {
+  service: Rule.string().example('testid').description('Service ID')
+})
+
+ErrorManager.register('ServiceManager', 'SM_SERVICE_CONVERT_ERROR',
+  'Failed to convert a service file into the internal structure (autoReload watch)', {
+  service: Rule.string().example('testid').description('Service ID'),
+  dir: Rule.string().example('./services').description('Services dir'),
+  filename: Rule.string().example('test-service.json').description('Service file name')
+})
+
+ErrorManager.register('ServiceManager', 'SM_SUBMASTER_EVENT_ERROR',
+  'Failed to forward a parent-container event to the service via submaster', {
+  service: Rule.string().example('testid').description('Service ID'),
+  channel: Rule.string().example('Service.parent.event').description('Container channel')
+})
+
 export default class ServiceManager extends Device {
   description(): string {
     return `Устройство ServiceManager управляет жизненным циклом сервисов в системе. 
@@ -311,7 +340,7 @@ export default class ServiceManager extends Device {
       try {
         await this.apiServiceStop({ service: id })
       } catch (error) {
-        this.error(`Failed to stop service ${id} during shutdown`, error as Error)
+        this.error('service stop failed during shutdown', ErrorManager.make('SM_SERVICE_STOP_ERROR', { id }).add(error as Error))
       }
     }
   }
@@ -617,14 +646,14 @@ export default class ServiceManager extends Device {
       }
       fs.writeFileSync(conf.metaPath, JSON.stringify(raw, null, '\t'))
     } catch (error) {
-      this.error('Error save service meta journal', error as Error)
+      this.error('save service meta journal', ErrorManager.make('SM_META_SAVE_ERROR', { service, path: conf.metaPath }).add(error as Error))
     }
 
     if (conf.run && this.servicesWorker[service]) {
       try {
         await this.inputSubmaster(this.makeServiceRequest('serviceJournalSet', { service, journal: journal ?? null }))
       } catch (error) {
-        this.error('Error live-apply service journal', error as Error)
+        this.error('apply service journal', ErrorManager.make('SM_JOURNAL_APPLY_ERROR', { service }).add(error as Error))
       }
     }
 
@@ -696,7 +725,7 @@ export default class ServiceManager extends Device {
             // Мы предпологаем что первая часть файла у нас - идентификатор сервиса
             // Добавляем его к списку ошибок сервиса
             this.addError(res[0], error);
-            if (error instanceof Error) this.error('Error generate service file', error)
+            if (error instanceof Error) this.error('convert service file', ErrorManager.make('SM_SERVICE_CONVERT_ERROR', { service: res[0], dir: dirConf.dir, filename }).add(error))
           }
         }, 500))
       }))
@@ -887,7 +916,7 @@ export default class ServiceManager extends Device {
     try {
       await this.inputSubmaster(iReq)
     }catch(err){
-      this.error("Error send submaser container event", err as Error)
+      this.error('send submaster container event', ErrorManager.make('SM_SUBMASTER_EVENT_ERROR', { service, channel }).add(err as Error))
     }
   }
 

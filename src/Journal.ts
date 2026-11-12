@@ -25,6 +25,9 @@ ErrorManager.register('Journal', 'JRN_POINTS_LIMIT', 'Read window exceeds maxRea
     limit: Rule.number().required().description('Configured maxReadPoints'),
 })
 ErrorManager.register('Journal', 'JRN_SERVICE_MANAGER_NF', 'ServiceManager device not found in this container (serviceLogSet needs it to persist and live-toggle the journal)')
+ErrorManager.register('Journal', 'JRN_APPEND_FAILED', 'Journal-db append failed; the row is dropped, capture continues', {
+    stage: Rule.string().example('own-event').description('Which append path failed (own-event | own-metric | worker-batch)'),
+})
 
 type RawRow = {
     ts: number
@@ -159,7 +162,7 @@ export default class Journal extends Device {
                         trace: data.trace,
                     })
                 } catch (e) {
-                    this.error('Journal own-event append failed', e as Error)
+                    this.error('journal own-event append failed', ErrorManager.make('JRN_APPEND_FAILED', { stage: 'own-event' }).add(e as Error))
                 }
             })
         }
@@ -180,7 +183,7 @@ export default class Journal extends Device {
                     value,
                 })
             } catch (e) {
-                this.error('Journal own-metric append failed', e as Error)
+                this.error('journal own-metric append failed', ErrorManager.make('JRN_APPEND_FAILED', { stage: 'own-metric' }).add(e as Error))
             }
         })
     }
@@ -226,7 +229,7 @@ export default class Journal extends Device {
                 })
             }
         } catch (e) {
-            this.error('Journal append failed', e as Error)
+            this.error('journal worker-batch append failed', ErrorManager.make('JRN_APPEND_FAILED', { stage: 'worker-batch' }).add(e as Error))
         }
     }
 

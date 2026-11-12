@@ -15,6 +15,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
 const os_1 = __importDefault(require("os"));
 const process_1 = __importDefault(require("process"));
+vrack2_core_1.ErrorManager.register('System', 'SYS_SHUTDOWN_TIMEOUT', 'Graceful shutdown did not finish within shutdownTimeout; the process force-exits', {
+    timeout: vrack2_core_1.Rule.number().required().example(10000).description('Shutdown timeout, ms')
+});
+vrack2_core_1.ErrorManager.register('System', 'SYS_SHUTDOWN_STOP_FAILED', 'Container.stopAll() failed during graceful shutdown', {});
+vrack2_core_1.ErrorManager.register('System', 'SYS_SHUTDOWN_DESTROY_FAILED', 'Bootstrap.destroyAll() failed during graceful shutdown', {});
 class System extends vrack2_core_1.Device {
     description() {
         return `Устройство System предоставляет системную информацию и метрики. 
@@ -152,20 +157,20 @@ class System extends vrack2_core_1.Device {
                 return;
             }
             stoppingAt = Date.now();
-            this.terminal(`Received ${signal} — shutting down container`, {});
+            this.terminal('shutdown signal received', { signal });
             // Watchdog: if teardown hangs (a device onStopAsync never resolves),
             // force-exit. unref so it doesn't hold the loop when teardown is fast.
             const watchdog = setTimeout(() => {
-                this.error('Graceful shutdown timed out — force exit', {});
+                this.error('graceful shutdown timed out — force exit', vrack2_core_1.ErrorManager.make('SYS_SHUTDOWN_TIMEOUT', { timeout: this.options.shutdownTimeout }));
                 process_1.default.exit(1);
             }, this.options.shutdownTimeout);
             (_a = watchdog.unref) === null || _a === void 0 ? void 0 : _a.call(watchdog);
             let hadError = false;
             Promise.resolve()
                 .then(() => this.Container.stopAll())
-                .catch((e) => { hadError = true; this.error('Container.stopAll failed during shutdown', e); })
+                .catch((e) => { hadError = true; this.error('container stopAll failed during shutdown', vrack2_core_1.ErrorManager.make('SYS_SHUTDOWN_STOP_FAILED').add(e)); })
                 .then(() => this.Container.Bootstrap.destroyAll())
-                .catch((e) => { hadError = true; this.error('Bootstrap.destroyAll failed during shutdown', e); })
+                .catch((e) => { hadError = true; this.error('bootstrap destroyAll failed during shutdown', vrack2_core_1.ErrorManager.make('SYS_SHUTDOWN_DESTROY_FAILED').add(e)); })
                 .then(() => { clearTimeout(watchdog); process_1.default.exit(hadError ? 1 : 0); });
         };
         process_1.default.on('SIGINT', () => handler('SIGINT'));
