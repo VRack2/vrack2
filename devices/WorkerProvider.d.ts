@@ -24,11 +24,28 @@ export default class WorkerProvider extends Device {
         reject: (ret: any) => void;
     }>;
     protected qIndex: number;
-    process(): void;
+    onStart(): void;
+    /**
+     * The worker process lifecycle is delegated to VRack2: the master stops a
+     * service worker through the command channel (Service.shutdown), never by
+     * signal. A SIGINT/SIGTERM that reaches this process anyway — for example
+     * Ctrl+C in a terminal, because forked workers share the foreground process
+     * group — must be ignored: the journal-db Shutdown hook drains and
+     * re-raises the signal, and Node's default behavior would kill the worker
+     * before the master can stop it gracefully and flush its final journal
+     * batches.
+     *
+     * Transient workers that have no command-channel stop (e.g. DeviceInfo
+     * workers, stopped by WorkersManager.terminate() = SIGTERM) must opt out
+     * with the `ignoreSignals: false` option in their service file: there the
+     * signal is the only stop mechanism, and the process must die from it so
+     * the 'exit' event settles the worker stop promise.
+     */
+    protected bindSignals(): void;
     /**
      * Receiving and processing a command from the main VRack2 service
      *
-     * @see WorkerProvider.process()
+     * @see WorkerProvider.onStart()
     */
     inputCommand(command: IInternalMessage): Promise<void>;
     /**

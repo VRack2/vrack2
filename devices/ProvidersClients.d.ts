@@ -26,7 +26,7 @@ export default class ProvidersClients extends Device {
     checkOptions(): {
         [key: string]: BasicType;
     };
-    preProcess(): void;
+    onRegister(): void;
     /**
      * Sending a message to a specific client
      *

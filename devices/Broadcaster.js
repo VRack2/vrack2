@@ -55,18 +55,18 @@ class Broadcaster extends vrack2_core_1.Device {
     }
     inputs() {
         return {
-            'clients.broadcast%d': vrack2_core_1.Port.standart().dynamic(this.options.broadcastInputs).description('Broadcast to clients port'),
-            'clients.register': vrack2_core_1.Port.standart().description('Register client port'),
-            'clients.unregister': vrack2_core_1.Port.standart().description('Unregister client port')
+            'clients.broadcast%d': vrack2_core_1.Port.standard().dynamic(this.options.broadcastInputs).description('Broadcast to clients port'),
+            'clients.register': vrack2_core_1.Port.standard().description('Register client port'),
+            'clients.unregister': vrack2_core_1.Port.standard().description('Unregister client port')
         };
     }
     outputs() {
         return {
-            'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
-            'guard.broadcast': vrack2_core_1.Port.standart().description('Guard broadcast send')
+            'register.command': vrack2_core_1.Port.standard().description('Register command into master'),
+            'guard.broadcast': vrack2_core_1.Port.standard().description('Guard broadcast send')
         };
     }
-    process() {
+    onStart() {
         this.ports.output['register.command'].push({
             command: 'channelJoin',
             short: 'Join to broadcast channel',
@@ -95,7 +95,7 @@ class Broadcaster extends vrack2_core_1.Device {
             'broadcastInputs': vrack2_core_1.Rule.number().min(1).max(100).integer().required().default(8)
         };
     }
-    preProcess() {
+    onRegister() {
         for (let i = 1; i <= this.options.broadcastInputs; i++) {
             this.addInputHandler('clients.broadcast' + i, this.inputClientsBroadcast.bind(this));
         }

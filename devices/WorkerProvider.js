@@ -10,7 +10,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
-vrack2_core_1.ErrorManager.register('WorkerProvider', 'O0LWU331YS7J', 'WP_INTERNAL_COMMAND_ERROR', 'An error occurred while executing an internal command that the service sent to VRACK.');
+vrack2_core_1.ErrorManager.register('WorkerProvider', 'WP_INTERNAL_COMMAND_ERROR', 'An error occurred while executing an internal command that the service sent to VRACK.');
 class WorkerProvider extends vrack2_core_1.Device {
     constructor() {
         super(...arguments);
@@ -29,24 +29,57 @@ class WorkerProvider extends vrack2_core_1.Device {
     }
     inputs() {
         return {
-            send: vrack2_core_1.Port.standart().description('Send data to parent process'),
-            broadcast: vrack2_core_1.Port.standart().description('Send broadcast to client'),
+            send: vrack2_core_1.Port.standard().description('Send data to parent process'),
+            broadcast: vrack2_core_1.Port.standard().description('Send broadcast to client'),
             internal: vrack2_core_1.Port.return().description('Request internal command'),
         };
     }
     checkOptions() {
-        return {};
+        return {
+            ignoreSignals: vrack2_core_1.Rule.boolean().default(true).description('Ignore SIGINT/SIGTERM in the worker process (shutdown is delegated to VRack2 via the command channel). ' +
+                'Set false for transient workers stopped by WorkersManager.terminate(): the signal must kill the process so its exit settles the stop promise')
+        };
     }
-    process() {
+    onStart() {
         // Bind loaded method for send signal to service manager
-        this.Container.on('loaded', this.loaded.bind(this));
+        this.Container.on('service.ready', this.loaded.bind(this));
         vrack2_core_1.UniversalWorker.onMessage(this.inputCommand.bind(this));
         // parentPort?.on('message', this.inputCommand.bind(this))
+        this.bindSignals();
+    }
+    /**
+     * The worker process lifecycle is delegated to VRack2: the master stops a
+     * service worker through the command channel (Service.shutdown), never by
+     * signal. A SIGINT/SIGTERM that reaches this process anyway — for example
+     * Ctrl+C in a terminal, because forked workers share the foreground process
+     * group — must be ignored: the journal-db Shutdown hook drains and
+     * re-raises the signal, and Node's default behavior would kill the worker
+     * before the master can stop it gracefully and flush its final journal
+     * batches.
+     *
+     * Transient workers that have no command-channel stop (e.g. DeviceInfo
+     * workers, stopped by WorkersManager.terminate() = SIGTERM) must opt out
+     * with the `ignoreSignals: false` option in their service file: there the
+     * signal is the only stop mechanism, and the process must die from it so
+     * the 'exit' event settles the worker stop promise.
+     */
+    bindSignals() {
+        if (!this.options.ignoreSignals)
+            return;
+        let notified = false;
+        const ignore = (signal) => {
+            if (!notified) {
+                notified = true;
+                this.terminal('worker shutdown signal delegated to VRack2, ignoring', { signal });
+            }
+        };
+        process.on('SIGINT', () => ignore('SIGINT'));
+        process.on('SIGTERM', () => ignore('SIGTERM'));
     }
     /**
      * Receiving and processing a command from the main VRack2 service
      *
-     * @see WorkerProvider.process()
+     * @see WorkerProvider.onStart()
     */
     inputCommand(command) {
         return __awaiter(this, void 0, void 0, function* () {

@@ -87,7 +87,7 @@ VRack2 предлагает два проверенных подхода.
 ```ts
 /**
  * Заполняет shares данными на основе реально подключённых портов.
- * Вызывается только внутри this.process().
+ * Вызывается только внутри this.onStart().
  */
 protected fillSharesPorts() {
   for (let i = 1; i <= this.options.devices; i++) {

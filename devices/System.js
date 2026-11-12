@@ -15,6 +15,11 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
 const os_1 = __importDefault(require("os"));
 const process_1 = __importDefault(require("process"));
+vrack2_core_1.ErrorManager.register('System', 'SYS_SHUTDOWN_TIMEOUT', 'Graceful shutdown did not finish within shutdownTimeout; the process force-exits', {
+    timeout: vrack2_core_1.Rule.number().required().example(10000).description('Shutdown timeout, ms')
+});
+vrack2_core_1.ErrorManager.register('System', 'SYS_SHUTDOWN_STOP_FAILED', 'Container.stopAll() failed during graceful shutdown', {});
+vrack2_core_1.ErrorManager.register('System', 'SYS_SHUTDOWN_DESTROY_FAILED', 'Bootstrap.destroyAll() failed during graceful shutdown', {});
 class System extends vrack2_core_1.Device {
     description() {
         return `Устройство System предоставляет системную информацию и метрики. 
@@ -23,19 +28,26 @@ class System extends vrack2_core_1.Device {
     }
     outputs() {
         return {
-            'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
+            'register.command': vrack2_core_1.Port.standard().description('Register command into master'),
+        };
+    }
+    checkOptions() {
+        return {
+            shutdownTimeout: vrack2_core_1.Rule.number().integer().min(1000).default(15000).required()
+                .description('Graceful shutdown watchdog (ms): if Container.stopAll/destroyAll does not finish in time, force-exit'),
         };
     }
     metrics() {
         return {
-            'memory.rss': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory rss'),
-            'memory.heaptotal': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapTotal'),
-            'memory.heapused': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapUsed'),
-            'memory.external': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory external'),
-            'memory.arraybuffers': vrack2_core_1.Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory arrayBuffers'),
+            'memory.rss': vrack2_core_1.Metric.one().descriptions('System memory rss'),
+            'memory.heaptotal': vrack2_core_1.Metric.one().descriptions('System memory heapTotal'),
+            'memory.heapused': vrack2_core_1.Metric.one().descriptions('System memory heapUsed'),
+            'memory.external': vrack2_core_1.Metric.one().descriptions('System memory external'),
+            'memory.arraybuffers': vrack2_core_1.Metric.one().descriptions('System memory arrayBuffers'),
         };
     }
-    process() {
+    onStart() {
+        this.bindShutdown();
         this.ports.output['register.command'].push({
             command: 'structureGet',
             short: 'Get structure',
@@ -59,32 +71,6 @@ class System extends vrack2_core_1.Device {
                 id: vrack2_core_1.Rule.string().required().example('vrack2').description('Container unique identify (see Container.id)'),
                 structure: vrack2_core_1.Rule.object().required().description('New Structure - see IContainerStructure')
             },
-        });
-        this.ports.output['register.command'].push({
-            command: 'systemMetric',
-            short: 'Get system metric',
-            description: 'Getting a system metrics',
-            level: 3,
-            owner: this.type,
-            icon: 'graph-up',
-            handler: this.apiSystemMetric.bind(this),
-            rules: {
-                service: vrack2_core_1.Rule.string().maxLength(120).default('not used').required().description('Service id (not used for this action)'),
-                device: vrack2_core_1.Rule.string().maxLength(120).example('DeviceID').required().description('Device id'),
-                metric: vrack2_core_1.Rule.string().maxLength(120).example('metric.id').required().description('Device metric path'),
-                period: vrack2_core_1.Rule.string().maxLength(120).example('start:end').required().description('VRackDB period'),
-                precision: vrack2_core_1.Rule.string().maxLength(60).required().example('400').description('VRackDB precision'),
-                func: vrack2_core_1.Rule.string().default('last').maxLength(10).description('Read function (last,first,min,max,avg,sum)')
-            },
-            return: vrack2_core_1.Rule.object().fields({
-                relevant: vrack2_core_1.Rule.boolean().default(false).example(false).description('result relevance flag'),
-                start: vrack2_core_1.Rule.number().integer().example(1).description('Beginning of the period'),
-                end: vrack2_core_1.Rule.number().integer().example(100).description('End of period '),
-                rows: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
-                    time: vrack2_core_1.Rule.number().integer().example(10).description('Time in MTU'),
-                    value: vrack2_core_1.Rule.number().example(12.3223).description('Metric value || null')
-                }).description('Metric storage object')).description('Array of metrics')
-            }).description('Metric request result - see vrack-db read documentation')
         });
         this.ports.output['register.command'].push({
             command: 'systemInfo',
@@ -122,7 +108,7 @@ class System extends vrack2_core_1.Device {
                 network: vrack2_core_1.Rule.object().description('Network interfaces information - see os.networkInterfaces()')
             }).description('Device info object')
         });
-        setInterval(() => {
+        this.memTimer = setInterval(() => {
             const mem = process_1.default.memoryUsage();
             this.metric('memory.rss', Math.round(mem.rss / 1024 / 1024));
             this.metric('memory.heaptotal', Math.round(mem.heapTotal / 1024 / 1024));
@@ -130,6 +116,65 @@ class System extends vrack2_core_1.Device {
             this.metric('memory.external', Math.round(mem.external / 1024 / 1024));
             this.metric('memory.arraybuffers', Math.round(mem.arrayBuffers / 1024 / 1024));
         }, 5000);
+    }
+    /**
+     * Release the memory-metrics interval owned by this device. Without this the
+     * interval keeps the event loop alive after Container.stopAll(), so the
+     * process only exits because the shutdown chain calls process.exit()
+     * explicitly, and restarting the device stacks a second interval.
+     */
+    onStop() {
+        if (this.memTimer) {
+            clearInterval(this.memTimer);
+            this.memTimer = undefined;
+        }
+    }
+    /**
+     * Graceful shutdown of the master container on SIGINT/SIGTERM.
+     *
+     * The framework does not manage the host process lifecycle, so this device
+     * (the platform's own System device) owns it: on a termination signal it
+     * runs the canonical teardown — `Container.stopAll()` (devices stopped in
+     * reverse start order: ServiceManager.onStopAsync stops every service, so
+     * their final journal batches reach the still-open Journal tables; Journal
+     * is started first and therefore stopped last, flushing its segments) then
+     * `Bootstrap.destroyAll()` (boot-class stores closed) — and only then exits
+     * the process.
+     *
+     * Idempotent latch: the journal-db Shutdown hook re-raises the same signal
+     * synchronously after draining the WAL; that re-entrant call is ignored. A
+     * genuine second signal (a real second Ctrl+C, > 1s later) force-exits.
+     */
+    bindShutdown() {
+        let stoppingAt = 0;
+        const handler = (signal) => {
+            var _a;
+            if (stoppingAt) {
+                // Re-entrant re-raise from the journal-db hook (same tick) — ignore.
+                // A real second signal (user pressed Ctrl+C again) — force exit.
+                if (Date.now() - stoppingAt > 1000)
+                    process_1.default.exit(1);
+                return;
+            }
+            stoppingAt = Date.now();
+            this.terminal('shutdown signal received', { signal });
+            // Watchdog: if teardown hangs (a device onStopAsync never resolves),
+            // force-exit. unref so it doesn't hold the loop when teardown is fast.
+            const watchdog = setTimeout(() => {
+                this.error('graceful shutdown timed out — force exit', vrack2_core_1.ErrorManager.make('SYS_SHUTDOWN_TIMEOUT', { timeout: this.options.shutdownTimeout }));
+                process_1.default.exit(1);
+            }, this.options.shutdownTimeout);
+            (_a = watchdog.unref) === null || _a === void 0 ? void 0 : _a.call(watchdog);
+            let hadError = false;
+            Promise.resolve()
+                .then(() => this.Container.stopAll())
+                .catch((e) => { hadError = true; this.error('container stopAll failed during shutdown', vrack2_core_1.ErrorManager.make('SYS_SHUTDOWN_STOP_FAILED').add(e)); })
+                .then(() => this.Container.Bootstrap.destroyAll())
+                .catch((e) => { hadError = true; this.error('bootstrap destroyAll failed during shutdown', vrack2_core_1.ErrorManager.make('SYS_SHUTDOWN_DESTROY_FAILED').add(e)); })
+                .then(() => { clearTimeout(watchdog); process_1.default.exit(hadError ? 1 : 0); });
+        };
+        process_1.default.on('SIGINT', () => handler('SIGINT'));
+        process_1.default.on('SIGTERM', () => handler('SIGTERM'));
     }
     /**
      * Getting the service structure
@@ -153,21 +198,8 @@ class System extends vrack2_core_1.Device {
         });
     }
     /**
-     * Getting device metric
-     * Obtaining system metrics. Those that were initialized at the VRack2 level
-    */
-    apiSystemMetric(data, gData) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', vrack2_core_1.DeviceMetrics);
-            let precision = data.precision;
-            if (!isNaN(parseInt(precision)))
-                precision = parseInt(precision);
-            return DM.read(data.device, data.metric, data.period, precision, data.func);
-        });
-    }
-    /**
      * Returns a list of device vendors
-    */
+     */
     apiVendorList() {
         return __awaiter(this, void 0, void 0, function* () {
             const DM = this.Container.Bootstrap.getBootClass('DeviceManager', vrack2_core_1.DeviceManager);
@@ -197,8 +229,8 @@ class System extends vrack2_core_1.Device {
      *
     */
     apiGetSystemInfo() {
-        var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
+            var _a, _b;
             const getCpuInfo = () => {
                 const cpus = os_1.default.cpus();
                 if (!cpus || cpus.length === 0) {

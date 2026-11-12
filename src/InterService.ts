@@ -4,7 +4,6 @@ import WorkerProvider from './WorkerProvider';
 
 ErrorManager.register(
     'InterService',
-    'SC3AHS7GZUTZ',
     'INTER_SERVICE_PROCESS_ERROR',
     'You are trying to run a device outside of a service container. This device can only run inside a service with WorkerProvider'
   )
@@ -31,11 +30,11 @@ export default class InterService extends Device {
         }
     }
 
-    preProcess(): void {
+    onRegister(): void {
         for (let i = 1; i<= this.options.inputs; i++ ) this.addInputHandler('command'+i, this.inputCommand.bind(this))
     }
     
-    process(): void {
+    onStart(): void {
         if (!this.Container.parent) throw ErrorManager.make('INTER_SERVICE_PROCESS_ERROR')
         if (!this.Container.parent?.devices['WorkerProvider']) throw ErrorManager.make('INTER_SERVICE_PROCESS_ERROR')
     }

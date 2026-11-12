@@ -23,9 +23,10 @@ const defaultKey = {
     description: 'Default administrator api key',
     level: 1,
     key: 'default',
-    private: ''
+    private: '',
+    public: ''
 };
-vrack2_core_1.ErrorManager.register('KeyManager', '8CDGXUV915LH', 'AKEYM_KEY_NOT_FOUND', 'A non-existent key identifier was specified.');
+vrack2_core_1.ErrorManager.register('KeyManager', 'AKEYM_KEY_NOT_FOUND', 'A non-existent key identifier was specified.');
 /**
  * Access Key Manager.
  *
@@ -48,7 +49,7 @@ class KeyManager extends vrack2_core_1.Device {
     }
     outputs() {
         return {
-            'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
+            'register.command': vrack2_core_1.Port.standard().description('Register command into master'),
         };
     }
     checkOptions() {
@@ -56,7 +57,7 @@ class KeyManager extends vrack2_core_1.Device {
             keysPath: vrack2_core_1.Rule.string().required().default('./keys.json').description('Path to keys json file')
         };
     }
-    process() {
+    onStart() {
         /** Load access keys at start */
         this.loadKeys();
         /**
@@ -83,12 +84,10 @@ class KeyManager extends vrack2_core_1.Device {
             return: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
                 id: vrack2_core_1.Rule.string().example('qjkl13j5klj').description('Unique key ID'),
                 name: vrack2_core_1.Rule.string().example('Lang name').description('Short unique lang name for this key'),
-                description: vrack2_core_1.Rule.string().example('Use description').description('Description of the purpose of the key'),
                 level: vrack2_core_1.Rule.number().example(3).integer().description('Key access level. Can be 1/2/3/1000 by default'),
-                key: vrack2_core_1.Rule.string().example('rlmtjpopefe').description('Key for access to VRack2'),
-                private: vrack2_core_1.Rule.string().example('nrono3bgo2112knj4ngkj').description('Key for traffic encryption')
+                key: vrack2_core_1.Rule.string().example('rlmtjpopefe').description('Key for access to VRack2')
             }))
-                .description('Return a List of all keys')
+                .description('Return a List of all keys (id, name, key, level only - no key material)')
         });
         this.ports.output['register.command'].push({
             command: 'apiKeyAdd',
@@ -114,7 +113,8 @@ class KeyManager extends vrack2_core_1.Device {
                 description: vrack2_core_1.Rule.string().example('Use description').description('Description of the purpose of the key'),
                 level: vrack2_core_1.Rule.number().example(3).integer().description('Key access level. Can be 1/2/3/1000 by default'),
                 key: vrack2_core_1.Rule.string().example('rlmtjpopefe').description('Key for access to VRack2'),
-                private: vrack2_core_1.Rule.string().example('nrono3bgo2112knj4ngkj').description('Key for traffic encryption')
+                private: vrack2_core_1.Rule.string().example('-----BEGIN PRIVATE KEY-----').description('One-time client private key (PEM) - NOT stored on the server'),
+                public: vrack2_core_1.Rule.string().example('-----BEGIN PUBLIC KEY-----').description("Client's P-256 public key (PEM), stored on the server")
             })
         });
         this.ports.output['register.command'].push({
@@ -151,11 +151,14 @@ class KeyManager extends vrack2_core_1.Device {
         });
     }
     /**
-     * Returns a list of all access keys along with private keys
+     * Returns a list of access keys.
+     * Only safe metadata is exposed (id, name, key, level): the `private` secret,
+     * the `public` key and the `description` are never returned, so a read-level
+     * client cannot read the key material of other keys.
     */
     apiKeyList() {
         return __awaiter(this, void 0, void 0, function* () {
-            return this.keys;
+            return this.keys.map(({ id, name, key, level }) => ({ id, name, key, level }));
         });
     }
     /**
@@ -163,22 +166,35 @@ class KeyManager extends vrack2_core_1.Device {
      * You can only assign a level, name and description.
      * The last flag can be used to specify that VRack2 generates a private key
      *
-     * @see KeyManager.process() Register command apiKeyAdd
+     * @see KeyManager.onStart() Register command apiKeyAdd
     */
     apiKeyAdd(data) {
         return __awaiter(this, void 0, void 0, function* () {
+            // For cipher keys, generate a P-256 keypair: the public key is stored on the server
+            // (used for auth + ECDH), the private key is returned ONCE to the caller and never
+            // persisted (the client keeps it). This is the asymmetric replacement for the old
+            // shared-secret model.
+            let clientPub = '';
+            let clientPrivOut = '';
+            if (data.cipher) {
+                const kp = crypto_1.default.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+                clientPub = kp.publicKey.export({ type: 'spki', format: 'pem' }).toString();
+                clientPrivOut = kp.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+            }
             const nKey = {
                 id: this.uid(10),
                 name: data.name,
                 description: data.description,
                 level: data.level,
                 key: this.uid(8),
-                private: data.cipher ? this.uid(16) : ''
+                public: clientPub,
+                private: ''
             };
             this.keys.push(nKey);
             this.Container.emit('KeyManager.key.add', nKey);
             this.syncKeys();
-            return nKey;
+            // Return the record plus the one-time private key (NOT stored on the server)
+            return Object.assign(Object.assign({}, nKey), { private: clientPrivOut });
         });
     }
     /**

@@ -1,26 +1,28 @@
-import { Bootstrap, Container, CoreError, Device, DeviceMetrics, ErrorManager, ImportManager, MainProcess, Port, Rule, Metric, BasicMetric } from "vrack2-core";
+import { Bootstrap, Container, CoreError, Device, ErrorManager, ImportManager, MainProcess, Port, Rule, Metric, MetricOne } from "vrack2-core";
 
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 
 import { threadId } from "worker_threads"
 
+
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from './interfaces/IServiceConfig';
-import IServiceMeta from "./interfaces/IServiceMeta";
-import IServiceStructure from "vrack2-core/lib/IServiceStructure";
+import IServiceMeta, { IJournalToggles } from "./interfaces/IServiceMeta";
 import IDeviceActionRequest from "./interfaces/IDeviceActionRequest";
 
-import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 import IDevicePushRequest from "./interfaces/IDevicePushRequest";
 import { ICommandExport } from "./Master";
 
 
-ErrorManager.register('Service', 'UYWBAXO4GEB1', 'SERVICE_CONTAINER_ERROR', 'An error occurred while loading the container. The reason may be - an incorrect scheme or an error initializing the device. This is a general container loading error, see the nested error inside this')
-ErrorManager.register('Service', 'OFPCDVLAH535', 'SERVICE_CONTAINER_TERMINATE', 'The error occurred because some device called the termination method. See the nested error inside this', {
+
+
+
+ErrorManager.register('Service', 'SERVICE_CONTAINER_ERROR', 'An error occurred while loading the container. The reason may be - an incorrect scheme or an error initializing the device. This is a general container loading error, see the nested error inside this')
+ErrorManager.register('Service', 'SERVICE_CONTAINER_TERMINATE', 'The error occurred because some device called the termination method. See the nested error inside this', {
     device: Rule.string().default('').description('Device ID')
 })
-ErrorManager.register('Service', 'OVD06P5ZF9RV', 'SERVICE_CAPTURE_PORT_TIMEOUT', 'Timeout occurred while waiting for device output capture')
+ErrorManager.register('Service', 'SERVICE_CAPTURE_PORT_TIMEOUT', 'Timeout occurred while waiting for device output capture')
 export default class Serivce extends Device {
 
     description(): string {
@@ -31,10 +33,11 @@ export default class Serivce extends Device {
 
     outputs(): { [key: string]: BasicPort; } {
         return {
-            send: Port.standart().description('Send data to parent process'),
-            broadcast: Port.standart().description('Send broadcast to client'),
+            send: Port.standard().description('Send data to parent process'),
+            broadcast: Port.standard().description('Send broadcast to client'),
             'master.command': Port.return().description('Run master command'),
-            'register.command': Port.standart().description('Register command into master'),
+            'register.command': Port.standard().description('Register command into master'),
+            container: Port.standard().description('Emits the live Container of the started service'),
         }
     }
 
@@ -45,18 +48,18 @@ export default class Serivce extends Device {
     checkOptions(): { [key: string]: BasicType; } {
         return {
             'mainProcessPath': Rule.string().required().default('vrack2-core.MainProcess').description('Main process class path'),
-            'renderDelay': Rule.number().integer().min(10).max(3000).default(200).description('Minimal render delay for render shares'),
+            'renderDelay': Rule.number().integer().min(10).max(3000).default(10).description('Minimal render delay for render shares'),
             'uncaughtTerminate': Rule.boolean().default(true).description('Terminate service if call uncaught exception'),
         }
     }
 
-    metrics(): { [key: string]: BasicMetric; } {
+    metrics(): { [key: string]: MetricOne; } {
         return {
-            'memory.rss': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory rss'),
-            'memory.heaptotal': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapTotal'),
-            'memory.heapused': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapUsed'),
-            'memory.external': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory external'),
-            'memory.arraybuffers': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory arrayBuffers'),
+            'memory.rss': Metric.one().descriptions('System memory rss'),
+            'memory.heaptotal': Metric.one().descriptions('System memory heapTotal'),
+            'memory.heapused': Metric.one().descriptions('System memory heapUsed'),
+            'memory.external': Metric.one().descriptions('System memory external'),
+            'memory.arraybuffers': Metric.one().descriptions('System memory arrayBuffers'),
         }
     }
 
@@ -72,12 +75,17 @@ export default class Serivce extends Device {
         'device.event': 'event'
     }
 
+    /**
+     * Main process instance of the started service (kept for graceful stop:
+     * MainProcess.stop() stops the container and destroys boot classes,
+     * which flushes the journal stores to disk)
+     */
     MainProcess?: MainProcess;
 
     /**
      * Service container
-    */
-    ServiceContainer: Container = new Container('', {} as IServiceStructure, {} as Bootstrap);
+     */
+    ServiceContainer: Container = new Container('', {} as Bootstrap);
 
     /**
      * Service info (getting from service manager)
@@ -102,22 +110,22 @@ export default class Serivce extends Device {
 
     /***
      * Render pull for service shares data
-    */
+     */
     renderPull = new Set<string>()
 
     /**
-     * Render data for send to service manager
-    */
-    renderData = new Map<string, any>()
-
-    /**
-     * Render timer 
-    */
+     * Render timer
+     */
     renderTimer: boolean | NodeJS.Timeout = false;
 
     /**
+     * Memory metrics timer (setInterval from onStart)
+     */
+    memTimer: NodeJS.Timeout | null = null
+
+    /**
      * Индекс для захвата порта устройства
-    */
+     */
     captureIndex = 1000
 
     /**
@@ -125,10 +133,19 @@ export default class Serivce extends Device {
     */
     capturePull = new Map()
 
-    process(): void {
-        // // Bind loaded method for send signal to service manager
-        // this.Container.on('loaded', this.loaded.bind(this))
+    /**
+     * Journal batches waiting to be forwarded to the master Journal device
+     */
+    journalEvents: Array<any> = []
+    journalPorts: Array<any> = []
+    journalMetrics: Array<any> = []
 
+    /**
+     * Journal flush timer (250ms batching window)
+     */
+    journalTimer: NodeJS.Timeout | null = null
+
+    onStart(): void {
         // Register api commands
         this.ports.output['register.command'].push({
             command: 'serviceStart',
@@ -152,10 +169,21 @@ export default class Serivce extends Device {
             },
         })
 
+        this.ports.output['register.command'].push({
+            command: 'serviceStop',
+            description: 'Internal service command for graceful stop of the container and worker self-exit',
+            level: 0,
+            owner: this.type,
+            handler: this.apiServiceStop.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+            },
+        })
+
 
         this.ports.output['register.command'].push({
             command: 'serviceShares',
-            description: 'Queues all data to be sent',
+            description: 'Sends the current shares of all service devices to subscribers (direct push)',
             level: 3,
             owner: this.type,
             handler: this.apiServiceShares.bind(this),
@@ -193,6 +221,77 @@ export default class Serivce extends Device {
         })
 
         this.ports.output['register.command'].push({
+            command: 'serviceDeviceShares',
+            description: 'Get current shares data of a device',
+            level: 1,
+            owner: this.type,
+            handler: this.apiServiceDeviceShares.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: Rule.object().description('Current shares data of the device')
+        })
+
+        this.ports.output['register.command'].push({
+            command: 'deviceStop',
+            description: 'Stop a running device in the service container (device onStop() + onStopAsync()). Reversible and idempotent - a device that is not running is a no-op.',
+            level: 1,
+            owner: this.type,
+            handler: this.apiDeviceStop.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: Rule.object().fields({
+                device: Rule.string().example('DeviceID').description('Device id'),
+                started: Rule.boolean().example(false).description('Whether the device is running (started) after the call'),
+            }).description('Device state after the stop')
+        })
+
+        this.ports.output['register.command'].push({
+            command: 'deviceProcess',
+            description: 'Start (process) a device in the service container (device onStart() + onStartAsync()). Idempotent - an already started device is a no-op.',
+            level: 1,
+            owner: this.type,
+            handler: this.apiDeviceProcess.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: Rule.object().fields({
+                device: Rule.string().example('DeviceID').description('Device id'),
+                started: Rule.boolean().example(true).description('Whether the device is running (started) after the call'),
+            }).description('Device state after the process')
+        })
+
+        this.ports.output['register.command'].push({
+            command: 'deviceStatus',
+            description: 'Read the lifecycle status of a device in the service container (state registered/started/stopped, since timestamp, last alert/error, counters). Read-only - no mutations.',
+            level: 1,
+            owner: this.type,
+            handler: this.apiDeviceStatus.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
+            },
+            return: Rule.object().fields({
+                device: Rule.string().example('DeviceID').description('Device id'),
+                started: Rule.boolean().example(true).description('Whether the device is running (started)'),
+                status: Rule.object().fields({
+                    id: Rule.string().example('DeviceID').description('Device id'),
+                    type: Rule.string().example('vendor.Device').description('Device type'),
+                    state: Rule.string().example('started').description("Lifecycle state: 'registered' | 'started' | 'stopped'"),
+                    since: Rule.number().example(1700000000000).description('Date.now() of the last status change (ms)'),
+                    lastAlert: Rule.any().description('Last alert message (device.alert), or null'),
+                    lastError: Rule.any().description('Last error / terminate message, or null'),
+                    alertCount: Rule.number().integer().example(0).description('Number of alerts since registration'),
+                    errorCount: Rule.number().integer().example(0).description('Number of errors (including terminate) since registration'),
+                }).description('Systematized device status record maintained by the container'),
+            }).description('Device lifecycle status')
+        })
+
+        this.ports.output['register.command'].push({
             command: 'serviceDeviceOutputListen',
             description: 'Capture device output',
             level: 1,
@@ -202,7 +301,7 @@ export default class Serivce extends Device {
                 service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
                 device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
                 port: Rule.string().maxLength(120).required().example('portname').description('Input port of device'),
-                timeout: Rule.number().integer().min(0).max(20000).description('Timeout output listener')
+                timeout: Rule.number().integer().min(0).max(20000).default(5000).description('Timeout output listener, ms')
             },
             return: Rule.string().example('any').description('Return a captured data')
         })
@@ -211,82 +310,41 @@ export default class Serivce extends Device {
             command: 'serviceCommandsList',
             short: 'Master of service command list',
             description: 'Return all command in service registered',
-            level: 1000,
+            level: 3,
             icon:'list-ul',
             owner: this.type,
-            return: Rule.array().content(Rule.object().fields({
-              command: Rule.string().example('commandList').description('Command name/identifier'),
-              description: Rule.string().example('Long description').description('Command description'),
-              level: Rule.number().example(1000).integer().description('Level for access this command'),
-              rules: Rule.array().content(Rule.object().description('Rule Object')).description('Array Rules object for validation data for this command'),
-              owner: Rule.string().example('Long description').description('Owner module of this command'),
-              short: Rule.string().example('Command list').description('Short description (3-5 words)'),
-              icon: Rule.string().example('sd-card').description('Bootstrap icon (without bi- class only end like a "search","sd-card","share" & etc )'),
-              return: Rule.object()
-                .example({ type: 'string', required: 'boolean', default: 'any', rules: 'Array of subrules', example:'any', description:'string' })
-                .description('Rule object of return type'),
-            })).description('Array contain all command for this master'),
+            return: Rule.object().description('Map of all commands registered in this service: { [commandName]: { command, description, level, rules, owner, short, icon, return } }'),
             handler: this.apiCommandList.bind(this),
         })
-
-
-        this.ports.output['register.command'].push({
-            command: 'serviceDeviceMetric',
-            description: 'Getting a service device metrics',
-            level: 3,
-            owner: this.type,
-            icon: 'graph-up',
-            handler: this.apiServiceDeviceMetric.bind(this),
-            rules: {
-                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
-                metric: Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
-                period: Rule.string().maxLength(120).required().example('now-1h:now').description('VRackDB period'),
-                precision: Rule.string().maxLength(60).required().example('30s').description('VRackDB precision'),
-                func: Rule.string().default('last').maxLength(10).example('last').description('Read function (last,first,min,max,avg,sum)')
-            },
-            return: Rule.object().fields({
-                relevant: Rule.boolean().default(false).example(false).description('result relevance flag'),
-                start: Rule.number().integer().example(1).description('Beginning of the period'),
-                end: Rule.number().integer().example(100).description('End of period '),
-                rows: Rule.array().content(
-                    Rule.object().fields({
-                        time: Rule.number().integer().example(10).description('Time in MTU'),
-                        value: Rule.number().example(12.3223).description('Metric value || null')
-                    }).description('Metric storage object')
-                ).description('Array of metrics')
-            }).description('Metric request result - see vrack-db read documentation')
-        })
-
+        
 
         this.ports.output['register.command'].push({
-            command: 'serviceMetric',
-            short: 'Get service metric',
-            description: 'Getting a service metrics',
+            command: 'serviceStructure',
+            short: 'Get structure schema',
+            description: 'Return structure schema of the running service: by default (compact:true) devices with their ports and connections only (no metrics, no actions, no display settings); compact:false — the full container structure',
             level: 3,
             owner: this.type,
-            icon: 'graph-up',
-            handler: this.apiServiceMetric.bind(this),
+            icon: 'map-fill',
+            handler: this.apiServiceStructure.bind(this),
             rules: {
                 service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
-                device: Rule.string().maxLength(120).required().example('DeviceID').description('Device id'),
-                metric: Rule.string().maxLength(120).required().example('metric.id').description('Device metric path'),
-                period: Rule.string().maxLength(120).required().example('now-1h:now').description('VRackDB period'),
-                precision: Rule.string().maxLength(60).required().example('30s').description('VRackDB precision'),
-                func: Rule.string().default('last').maxLength(10).example('last').description('Read function (last,first,min,max,avg,sum)')
+                compact: Rule.boolean().default(true).example(true).description('true (default) — compact schema (devices + ports + connections only), false — full container structure'),
             },
-            return: Rule.object().fields({
-                relevant: Rule.boolean().default(false).example(false).description('result relevance flag'),
-                start: Rule.number().integer().example(1).description('Beginning of the period'),
-                end: Rule.number().integer().example(100).description('End of period '),
-                rows: Rule.array().content(
-                    Rule.object().fields({
-                        time: Rule.number().integer().example(10).description('Time in MTU'),
-                        value: Rule.number().example(12.3223).description('Metric value || null')
-                    }).description('Metric storage object')
-                ).description('Array of metrics')
-            }).description('Metric request result - see vrack-db read documentation')
+            return: Rule.object().description('compact:true — { [deviceId]: { type, ports: [{ port, direct, description }], outputs: { [port]: [{ device, port }] }, inputs: { [port]: [{ device, port }] } } }; compact:false — full container structure (see IContainerStructure)')
         })
+
+        this.ports.output['register.command'].push({
+            command: 'serviceJournalSet',
+            description: 'Internal live toggle of the service journal capture (journalEvents/journalMetrics/journalPorts meta keys applied without restart)',
+            level: 0,
+            owner: this.type,
+            handler: this.apiServiceJournalSet.bind(this),
+            rules: {
+                service: Rule.string().maxLength(120).required().example('test-service').description('Service id'),
+                journal: Rule.any().default(null).description('Capture toggles { events, ports, metrics } booleans (null = reset to defaults: events/metrics on, ports off)'),
+            },
+        })
+
 
         this.ports.output['register.command'].push({
             command: 'serviceParentEvent',
@@ -307,7 +365,7 @@ export default class Serivce extends Device {
         })
 
         /* SEND METRICS */
-        setInterval(() => {
+        this.memTimer = setInterval(() => {
             const mem = process.memoryUsage()
             this.metric('memory.rss', Math.round(mem.rss / 1024 / 1024))
             this.metric('memory.heaptotal', Math.round(mem.heapTotal / 1024 / 1024))
@@ -320,6 +378,14 @@ export default class Serivce extends Device {
             this.Container.emit('system.error', error)
             this.ServiceContainer.emit('system.error', error)
         })
+    }
+
+    onStop(): void {
+        if (this.memTimer) clearInterval(this.memTimer)
+        if (this.journalTimer) {
+            clearTimeout(this.journalTimer)
+            this.journalTimer = null
+        }
     }
 
     /**                 API SERVICE METHODS                 **/
@@ -351,18 +417,16 @@ export default class Serivce extends Device {
     */
     async apiServiceCheck(data: { info: IServiceConfig, meta: IServiceMeta }, gData: IGuardMessage) {
         try {
-            const service = ImportManager.importJSON(data.info.filePath)
-            const MainProcessClass = await ImportManager.importClass(this.options.mainProcessPath) as typeof MainProcess
-            const MainProcessEx = new MainProcessClass({ id: data.info.id, service })
-            MainProcessEx.Container.parent = this.Container
-            this.ServiceContainer = MainProcessEx.Container
-            this.Serviceinfo = data.info
-            this.ServiceMeta = data.meta
-            await this.bindTerminate()
-            await this.bindRenderEvent()
-            MainProcessEx.check()
-            // Ставим в очередь завершение процесса
-            setTimeout(()=>{ process.exit() })
+            const MainProcessEx = await this.createMainProcess(data.info, data.meta, false)
+            this.bindTerminate()
+            this.bindRenderEvent()
+            // Ожидаем завершения проверки: иначе асинхронная ошибка check()
+            // сработает после отправки ответа "success", и сломанная конфигурация
+            // будет ошибочно принята за валидную.
+            await MainProcessEx.check()
+            // Ставим в очередь завершение воркера через единственную точку shutdown()
+            // (destroyAll boot-классов закроет journal store, если check что-то залогировал)
+            setTimeout(()=>{ this.shutdown() })
         } catch (error) {
             const CE = ErrorManager.make('SERVICE_CONTAINER_ERROR').add(error as Error)
             this.serviceTerminate(CE)
@@ -377,29 +441,34 @@ export default class Serivce extends Device {
      * @param {IServiceMeta} data.meta ServiceManager internal serivce meta
     */
     async apiServiceStartSafe(data: { info: IServiceConfig, meta: IServiceMeta }, gData: IGuardMessage) {
-        const service = await ImportManager.importJSON(data.info.filePath)
-        const MainProcessClass = await ImportManager.importClass(this.options.mainProcessPath) as typeof MainProcess
-        const MainProcessEx = new MainProcessClass({ id: data.info.id, service, confFile: data.info.configPath })
-        MainProcessEx.Container.parent = this.Container
-        this.ServiceContainer = MainProcessEx.Container
-        this.ServiceContainer.meta = data.meta
-        this.Serviceinfo = data.info
-        this.ServiceMeta = data.meta
-        await this.bindRenderEvent()
-        await this.bindTerminate()
+        const MainProcessEx = await this.createMainProcess(data.info, data.meta, true)
+        // Сначала «собрать» контейнер: загрузить boot-классы и устройства
+        // (loadBootList живёт в check()).
+        // run() идемпотентен: повторный check() + runStart() безопасны.
+        await MainProcessEx.check()
+        // Пробрасываем контейнер и мета до runStart(),
+        // чтобы подписчики успели подключиться к событиям запуска
+        this.ports.output['container'].push({ container: this.ServiceContainer, meta: data.meta })
+        this.bindRenderEvent()
+        this.bindTerminate()
+        this.bindJournal()
         MainProcessEx.run()
-        await this.bindContainerDeviceEvents()
+        this.bindContainerDeviceEvents()
+        // Process-level lifecycle event: recorded under svc=`worker::<id>` so the
+        // service process shows start/stop in the unified journal (replacing the
+        // per-service device_log that the removed ServiceLogger used to hold).
+        this.notify('service started', { service: this.Serviceinfo.id })
     }
 
     /**
-     * Queues all shares data to be sent
-     * 
+     * Sends the current shares of all service devices to subscribers
+      * 
      * @param {Object} data - not used receive params
-    */
+     */
     async apiServiceShares(data: { service: string }, gData: IGuardMessage) {
-        this.renderData.forEach((value, key) => { this.renderPull.add(key) })
-        if (this.renderTimer && typeof this.renderTimer !== 'boolean') clearTimeout(this.renderTimer)
-        this.serviceRender()
+        for (const deviceId in this.ServiceContainer.devices) {
+            this.broadcast(this.makeBroadcastChannel(deviceId, 'render'), this.ServiceContainer.devices[deviceId].shares)
+        }
     }
 
     /**
@@ -413,10 +482,57 @@ export default class Serivce extends Device {
      * Calling a device port push
     */
     async apiServiceDevicePush(data: IDevicePushRequest, gData: IGuardMessage) {
-        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CTR_DEVICE_NF')
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF')
         const device = this.ServiceContainer.devices[data.device]
-        if (!device.ports.input[data.port]) throw ErrorManager.make('CTR_DEVICE_PORT_NF')    
+        if (!device.ports.input[data.port]) throw ErrorManager.make('CONT_DEVICE_PORT_NF')    
         return device.ports.input[data.port].push(data.data)
+    }
+
+    /**
+     * Get current shares data of a device
+    */
+    async apiServiceDeviceShares(data: { service: string, device: string }, gData: IGuardMessage) {
+        if (!this.ServiceContainer.devices[data.device]) throw ErrorManager.make('CONT_DEVICE_NF')
+        return this.ServiceContainer.devices[data.device].shares
+    }
+
+    /**
+     * Stop a running device in the service container
+     *
+     * Delegates to `Container.stopDevice()`: calls device `onStop()`, then
+     * `await onStopAsync()`, then marks it stopped. Reversible (can be started
+     * again via `deviceProcess`) and idempotent - a device that is not running
+     * is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
+     */
+    async apiDeviceStop(data: { service: string, device: string }, gData: IGuardMessage) {
+        await this.ServiceContainer.stopDevice(data.device)
+        return { device: data.device, started: this.ServiceContainer.isStarted(data.device) }
+    }
+
+    /**
+     * Start (process) a device in the service container
+     *
+     * Delegates to `Container.startDevice()`: calls device `onStart()`, then
+     * `await onStartAsync()`, then marks it started. Idempotent - an already
+     * started device is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
+     */
+    async apiDeviceProcess(data: { service: string, device: string }, gData: IGuardMessage) {
+        await this.ServiceContainer.startDevice(data.device)
+        return { device: data.device, started: this.ServiceContainer.isStarted(data.device) }
+    }
+
+    /**
+     * Read the lifecycle status of a device in the service container
+     *
+     * Delegates to `Container.getDeviceStatus()`: the container-maintained
+     * record (state registered/started/stopped, since, last alert/error,
+     * counters). Read-only - no mutations. Throws CONT_DEVICE_NF if the
+     * device id is unknown.
+     */
+    async apiDeviceStatus(data: { service: string, device: string }, gData: IGuardMessage) {
+        const status = this.ServiceContainer.getDeviceStatus(data.device)
+        if (!status) throw ErrorManager.make('CONT_DEVICE_NF', { device: data.device })
+        return { device: data.device, started: status.state === 'started', status }
     }
 
     /**
@@ -426,13 +542,13 @@ export default class Serivce extends Device {
         return new Promise((resolve, reject) => {
             // Проверяем наличие устройства
             if (!this.ServiceContainer.devices[data.device]) { 
-                reject( ErrorManager.make('CTR_DEVICE_NF'))
+                reject( ErrorManager.make('CONT_DEVICE_NF'))
                 return
             }
             const device = this.ServiceContainer.devices[data.device]
             // Проверяем наличие порта
             if (!device.ports.output[data.port]) { 
-                reject(ErrorManager.make('CTR_DEVICE_PORT_NF'))
+                reject(ErrorManager.make('CONT_DEVICE_PORT_NF'))
                 return
             }
             // Создаем новый индекс
@@ -478,26 +594,56 @@ export default class Serivce extends Device {
     }
 
     /**
-     * Getting device metric
-    */
-    async apiServiceDeviceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-        const DM = this.ServiceContainer.Bootstrap.getBootClass('DeviceMetrics', DeviceMetrics) as DeviceMetrics
-        let precision: string | number = data.precision
-        if (!isNaN(parseInt(precision))) precision = parseInt(precision)
-        return DM.read(data.device, data.metric, data.period, precision, data.func)
+     * Get the structure schema of the running service container
+     *
+     * Takes the live Container structure (the same data StructureStorage
+     * persists to disk). By default (compact:true) it is trimmed to devices +
+     * ports + connections only: no metrics, no actions, no display settings.
+     * compact:false returns the full container structure.
+     */
+    async apiServiceStructure(data: { service: string, compact?: boolean }, gData: IGuardMessage) {
+        const structure = await this.ServiceContainer.getStructure()
+        if (data.compact === false) return structure
+        const compact: { [key: string]: { type: string, ports: Array<{ port: string, direct: string, description?: string }>, outputs: { [key: string]: Array<{ device: string, port: string }> }, inputs: { [key: string]: Array<{ device: string, port: string }> } } } = {}
+        for (const id in structure) {
+            const d = structure[id]
+            compact[id] = {
+                type: d.type,
+                ports: (d.ports || []).map(p => ({ port: p.port, direct: p.direct, description: p.description })),
+                outputs: d.outputs || {},
+                inputs: d.inputs || {},
+            }
+        }
+        return compact
     }
 
-
+    /**
+     * Live apply of the journal capture toggles (serviceLogSet → ServiceManager
+     * → this internal command). Capture checks meta at event time, so the new
+     * config takes effect on the very next event.
+     */
+    async apiServiceJournalSet(data: { service: string, journal: IJournalToggles | null }, gData: IGuardMessage) {
+        delete this.ServiceMeta.journalEvents
+        delete this.ServiceMeta.journalMetrics
+        delete this.ServiceMeta.journalPorts
+        const j = data.journal
+        if (j) {
+            if (j.events !== undefined) this.ServiceMeta.journalEvents = j.events
+            if (j.ports !== undefined) this.ServiceMeta.journalPorts = j.ports
+            if (j.metrics !== undefined) this.ServiceMeta.journalMetrics = j.metrics
+        }
+        return { journal: this.journalEffective() }
+    }
 
     /**
-     * Getting device metric
-     * Obtaining system metrics. Those that were initialized at the VRack2 level
+     * Effective journal capture config after the meta defaults are applied.
      */
-    async apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-        const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', DeviceMetrics) as DeviceMetrics
-        let precision: string | number = data.precision
-        if (!isNaN(parseInt(precision))) precision = parseInt(precision)
-        return DM.read(data.device, data.metric, data.period, precision, data.func)
+    protected journalEffective() {
+        return {
+            events: this.ServiceMeta.journalEvents !== false,
+            ports: this.ServiceMeta.journalPorts === true,
+            metrics: this.ServiceMeta.journalMetrics !== false,
+        }
     }
 
 
@@ -513,9 +659,36 @@ export default class Serivce extends Device {
     /*                      Helpers                    */
 
     /**
+     * Create the service MainProcess and attach it to the worker
+     * (parent container, MainProcess/ServiceContainer/Serviceinfo/ServiceMeta fields).
+     * @param start true — full start (confFile + container.meta), false — check only
+     */
+    protected async createMainProcess(info: IServiceConfig, meta: IServiceMeta, start: boolean): Promise<MainProcess> {
+        const service = this.normalizeServiceBootstrap(ImportManager.importJSON(info.filePath))
+        // Unified VRack2-level journal: the per-service journal boot classes
+        // (port_log / metrics / per-container device_log stores) are disabled —
+        // events, port pushes and metrics are forwarded to the master Journal
+        // device instead (see bindJournal / flushJournal). A `null` entry
+        // removes the id from the merged bootlist (Bootstrap.mergeBootList).
+        if (!service.bootstrap) service.bootstrap = {}
+        service.bootstrap.PortLogger = null
+        service.bootstrap.DeviceMetrics = null
+        service.bootstrap.ServiceLogger = null
+        const MainProcessClass = await ImportManager.importClass(this.options.mainProcessPath) as typeof MainProcess
+        const MainProcessEx = new MainProcessClass({ id: info.id, service, ...(start ? { confFile: info.configPath } : {}) })
+        MainProcessEx.Container.parent = this.Container
+        this.MainProcess = MainProcessEx
+        this.ServiceContainer = MainProcessEx.Container
+        this.Serviceinfo = info
+        this.ServiceMeta = meta
+        if (start) this.ServiceContainer.meta = meta
+        return MainProcessEx
+    }
+
+    /**
      * Bind container device terminate event
-    */
-    protected async bindTerminate() {
+     */
+    protected bindTerminate() {
         this.ServiceContainer.on('device.terminate', (data: { device: string; data: string; trace: any; }) => {
             if (data.trace instanceof CoreError) return this.serviceTerminate(data.trace)
             const CE = ErrorManager.make('SERVICE_CONTAINER_TERMINATE', { device: data.device })
@@ -531,7 +704,7 @@ export default class Serivce extends Device {
      * 
      * @see eventsChannels device events list
     */
-    protected async bindContainerDeviceEvents() {
+    protected bindContainerDeviceEvents() {
         for (const channel in this.eventsChannels) {
             this.ServiceContainer.on(channel, (data: { device: string; data: string; trace: any; }, args: any[]) => {
                 this.broadcast(
@@ -542,18 +715,133 @@ export default class Serivce extends Device {
         }
     }
 
+    /**                 JOURNAL FORWARDING                 **/
+
+    /**
+     * Subscribe to the service container events (device channels, port
+      * pushes, metrics) and forward them in batches to the master Journal
+      * device. Capture toggles (journalEvents/journalMetrics/journalPorts) are
+      * checked at event time, so serviceLogSet applies live.
+     */
+    protected bindJournal() {
+        const svc = this.Serviceinfo.id
+        const channels: { [key: string]: string } = { ...this.eventsChannels, 'device.terminate': 'terminate' }
+        for (const channel in channels) {
+            const type = channels[channel]
+            this.ServiceContainer.on(channel, (data: { device: string; data: any; trace: any; }) => {
+                if (!this.journalCapture('events')) return
+                this.journalEvents.push({ ts: Date.now(), svc, device: data.device, event: type, data: data.data, trace: this.makeBroadcastTrace(data.trace) })
+                this.scheduleJournalFlush()
+            })
+        }
+        this.ServiceContainer.on('device.port', (data: { device: string; data: string; trace: any; }) => {
+            if (!this.journalCapture('ports')) return
+            this.journalPorts.push({ ts: Date.now(), svc, device: data.device, port: data.data, data: this.makeBroadcastTrace(data.trace) })
+            this.scheduleJournalFlush()
+        })
+        this.ServiceContainer.on('device.metric', (data: { device: string; data: any; trace: any; }) => {
+            if (!this.journalCapture('metrics')) return
+            const value = data.trace && typeof data.trace === 'object' ? data.trace.value : data.trace
+            if (typeof value !== 'number' || !Number.isFinite(value)) return
+            this.journalMetrics.push({ ts: Date.now(), svc, device: data.device, metric: data.data, value })
+            this.scheduleJournalFlush()
+        })
+        // Process-level capture: the worker's own container (`worker::<id>`)
+        // devices — the vrack2 `Service` device (memory.*), Master,
+        // WorkerProvider — join the unified journal under the container id, so
+        // `serviceDeviceMetric` / `serviceLog` with service=`worker::<id>` read
+        // them. Container events do not bubble from child containers (the
+        // service container), so there is no double capture. This replaces the
+        // `ServiceLogger` boot class (removed from process.json), whose events
+        // used to go only into the per-service `journals/worker::<id>/device_log`
+        // store that no platform command read.
+        this.Container.on('device.metric', (data: { device: string; data: any; trace: any; }) => {
+            if (!this.journalCapture('metrics')) return
+            const value = data.trace && typeof data.trace === 'object' ? data.trace.value : data.trace
+            if (typeof value !== 'number' || !Number.isFinite(value)) return
+            this.journalMetrics.push({ ts: Date.now(), svc: this.Container.id, device: data.device, metric: data.data, value })
+            this.scheduleJournalFlush()
+        })
+        for (const channel in channels) {
+            const type = channels[channel]
+            this.Container.on(channel, (data: { device: string; data: any; trace: any; }) => {
+                if (!this.journalCapture('events')) return
+                this.journalEvents.push({ ts: Date.now(), svc: this.Container.id, device: data.device, event: type, data: data.data, trace: this.makeBroadcastTrace(data.trace) })
+                this.scheduleJournalFlush()
+            })
+        }
+        // Process crash signal: the worker's own `uncaughtException` is emitted
+        // on this.Container as `system.error` (see onStart) — it is not a device
+        // channel, so the `channels` loop above misses it. Journal it explicitly
+        // under the worker container id (`event: 'error'`) so a crashing service
+        // process is visible through `serviceLog service="worker::<id>"`.
+        this.Container.on('system.error', (error: any) => {
+            if (!this.journalCapture('events')) return
+            // Stable event name in `data`; the error payload travels in `trace`.
+            const trace = error instanceof Error ? CoreError.objectify(error) : { message: String(error) }
+            this.journalEvents.push({ ts: Date.now(), svc: this.Container.id, device: this.id, event: 'error', data: 'worker uncaught error', trace })
+            this.scheduleJournalFlush()
+        })
+    }
+
+    /**
+     * Journal capture toggle check against the service meta. Defaults: events
+     * and metrics on, ports off — port logging is a debug tool and must be
+     * enabled explicitly (journalPorts).
+     */
+    protected journalCapture(kind: 'events' | 'ports' | 'metrics'): boolean {
+        if (kind === 'ports') return this.ServiceMeta.journalPorts === true
+        if (kind === 'metrics') return this.ServiceMeta.journalMetrics !== false
+        return this.ServiceMeta.journalEvents !== false
+    }
+
+    protected scheduleJournalFlush() {
+        if (this.journalTimer) return
+        this.journalTimer = setTimeout(() => this.flushJournal(), 250)
+        this.journalTimer.unref?.()
+    }
+
+    /**
+     * Send the accumulated journal batch to the master (fire-and-forget via
+     * the worker `send` port → WorkersManager.journal → Journal device).
+     */
+    protected flushJournal() {
+        if (this.journalTimer) {
+            clearTimeout(this.journalTimer)
+            this.journalTimer = null
+        }
+        if (!this.journalEvents.length && !this.journalPorts.length && !this.journalMetrics.length) return
+        const batch = {
+            command: 'journal',
+            events: this.journalEvents,
+            ports: this.journalPorts,
+            metrics: this.journalMetrics,
+        }
+        this.journalEvents = []
+        this.journalPorts = []
+        this.journalMetrics = []
+        try {
+            this.ports.output['send'].push(batch)
+        } catch (e) {
+            // A non-cloneable payload (function/circular) or a disconnecting
+            // worker: retry once with a JSON-sanitized batch, then drop —
+            // journaling is fail-soft by design.
+            try {
+                this.ports.output['send'].push(JSON.parse(JSON.stringify(batch)))
+            } catch (e2) { /* drop the batch */ }
+        }
+    }
+
     /**
      * Bind render device event
      * 
-     * Update render pull & render data
+     * Update render pull
      * 
      * @see renderPull
-     * @see renderData
-    */
-    protected async bindRenderEvent() {
+     */
+    protected bindRenderEvent() {
         this.ServiceContainer.on('device.render', (data: { device: string; data: string; trace: any; }) => {
             this.renderPull.add(data.device)
-            this.renderData.set(data.device, data.trace)
             if (!this.renderTimer) this.serviceRender()
         })
     }
@@ -562,11 +850,12 @@ export default class Serivce extends Device {
      * Send broadcast for device render event
      * 
      * @see bindRenderEvent
-    */
+     */
     protected serviceRender() {
         if (!this.renderPull.size) return
         this.renderPull.forEach((deviceId) => {
-            this.broadcast(this.makeBroadcastChannel(deviceId, 'render'), this.renderData.get(deviceId))
+            const device = this.ServiceContainer.devices[deviceId]
+            if (device) this.broadcast(this.makeBroadcastChannel(deviceId, 'render'), device.shares)
         })
         this.renderPull.clear()
         this.renderTimer = setTimeout(() => {
@@ -593,8 +882,6 @@ export default class Serivce extends Device {
             case 'object':
                 if (trace instanceof Error) return CoreError.objectify(trace)
         }
-        // if (typeof trace === 'string') return { trace }
-        // return util.inspect(trace, { showHidden: false, depth: null, compact: false })
         return trace
     }
 
@@ -615,34 +902,95 @@ export default class Serivce extends Device {
         this.ports.output['broadcast'].push({ channel, data })
     }
 
-    // /**
-    //  * Send data to ServiceManager after service loaded
-    // */
-    // protected loaded() {
-    //     this.ports.output['send'].push({
-    //         __index: workerData.__index,
-    //         __id: workerData.__id,
-    //         resultData: workerData.__id
-    //     })
-    // }
-
     /**
-     * Send termiate errro and terminate service process
-    */
-    protected serviceTerminate(error: Error) {
-        this.ports.output['send'].push({
-            command: 'error',
-            threadId: threadId,
-            error: CoreError.objectify(error)
-        })
-        this.exit()
+     * Graceful stop of the running service container and worker self-exit.
+     * Все завершающие процедуры — в единственной точке shutdown() (см. там).
+     * Main сбросил conf.autoReload перед командой, поэтому exit не вызовет автоперезапуск.
+     */
+    async apiServiceStop(data: { service: string }, gData: IGuardMessage) {
+        this.notify('service stopping', { service: this.Serviceinfo.id })
+        return this.shutdown()
     }
 
-    protected async exit() {
-        process.exit()
+    /**
+     * Завершение воркера сервиса: уведомить main об ошибке (если есть),
+     * остановить сервис (MainProcess.stop() — устройства + boot-классы),
+     * остановить воркер-контейнер, process.exit(0).
+     * Сюда сходятся все пути: команда stop, device.terminate,
+     * uncaughtException, ошибки start/check.
+     */
+    protected async shutdown(error?: Error): Promise<void> {
+        if (error) {
+            this.notifyMainError(error)
+        }
+
+        // Push the journal tail to the master before the worker disconnects
+        this.flushJournal()
+
+        if (this.MainProcess) {
+            try {
+                await this.MainProcess.stop()
+            } catch (e) {
+                this.notifyMainError(e as Error)
+            }
+        }
+
+        // Device onStop hooks (run by MainProcess.stop above) emit new journal
+        // events (e.g. terminal in onStop) — flush them too, otherwise they sit
+        // in the 250ms batch timer and are lost when the worker exits below.
+        this.flushJournal()
+
+        try {
+            await this.Container.stopAll()
+        } catch (e) {
+            console.error(`[Service] failed to stop worker container:`, e)
+        }
+
+        process.exit(0)
+    }
+
+    protected notifyMainError(error: Error) {
+        try {
+            this.ports.output['send'].push({
+                command: 'error',
+                threadId: threadId,
+                error: CoreError.objectify(error)
+            })
+        } catch (e) {
+            console.error('Service failed to notify main', error)
+        }
+    }
+
+    /**
+     * Терминальная ошибка сервиса: уведомление + завершение через единственную точку shutdown()
+     */
+    protected serviceTerminate(error: Error) {
+        // Terminal service failure: stable event name in `data`, the failure
+        // payload (the Error) in `trace`; svc already scopes it to worker::<id>.
+        this.error('service terminated', error)
+        return this.shutdown(error)
     }
 
     protected getNextCaptureIndex(){
         return this.captureIndex++
+    }
+
+    /**
+     * Normalize a service's `bootstrap` entries.
+     *
+     * `mergeBootList` (vrack2-core) requires every boot entry to carry an
+     * `options` object, so a bare `{ "path": "..." }` — the natural way for a
+     * service to override our default `DeviceMetrics` — would throw
+     * BTSP_BAD_BOOTLIST. Fill `options: {}` where it is missing.
+     */
+    protected normalizeServiceBootstrap(service: any) {
+        if (!service || typeof service !== 'object' || !service.bootstrap) return service
+        for (const id in service.bootstrap) {
+            const entry = service.bootstrap[id]
+            if (entry && typeof entry === 'object' && entry.options == null) {
+                entry.options = {}
+            }
+        }
+        return service
     }
 }

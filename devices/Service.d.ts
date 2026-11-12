@@ -1,12 +1,10 @@
-/// <reference types="node" />
-import { Container, Device, MainProcess, BasicMetric } from "vrack2-core";
+import { Container, Device, MainProcess, MetricOne } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 import IGuardMessage from "./interfaces/IGuardMessage";
 import IServiceConfig from './interfaces/IServiceConfig';
-import IServiceMeta from "./interfaces/IServiceMeta";
+import IServiceMeta, { IJournalToggles } from "./interfaces/IServiceMeta";
 import IDeviceActionRequest from "./interfaces/IDeviceActionRequest";
-import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
 import IDevicePushRequest from "./interfaces/IDevicePushRequest";
 export default class Serivce extends Device {
     description(): string;
@@ -20,7 +18,7 @@ export default class Serivce extends Device {
         [key: string]: BasicType;
     };
     metrics(): {
-        [key: string]: BasicMetric;
+        [key: string]: MetricOne;
     };
     /**
      * Devices events list
@@ -28,10 +26,15 @@ export default class Serivce extends Device {
     eventsChannels: {
         [key: string]: string;
     };
+    /**
+     * Main process instance of the started service (kept for graceful stop:
+     * MainProcess.stop() stops the container and destroys boot classes,
+     * which flushes the journal stores to disk)
+     */
     MainProcess?: MainProcess;
     /**
      * Service container
-    */
+     */
     ServiceContainer: Container;
     /**
      * Service info (getting from service manager)
@@ -43,25 +46,36 @@ export default class Serivce extends Device {
     ServiceMeta: IServiceMeta;
     /***
      * Render pull for service shares data
-    */
+     */
     renderPull: Set<string>;
     /**
-     * Render data for send to service manager
-    */
-    renderData: Map<string, any>;
-    /**
      * Render timer
-    */
+     */
     renderTimer: boolean | NodeJS.Timeout;
     /**
+     * Memory metrics timer (setInterval from onStart)
+     */
+    memTimer: NodeJS.Timeout | null;
+    /**
      * Индекс для захвата порта устройства
-    */
+     */
     captureIndex: number;
     /**
      * Пулл для хранения таймаутов захвата порта устройства
     */
     capturePull: Map<any, any>;
-    process(): void;
+    /**
+     * Journal batches waiting to be forwarded to the master Journal device
+     */
+    journalEvents: Array<any>;
+    journalPorts: Array<any>;
+    journalMetrics: Array<any>;
+    /**
+     * Journal flush timer (250ms batching window)
+     */
+    journalTimer: NodeJS.Timeout | null;
+    onStart(): void;
+    onStop(): void;
     /**                 API SERVICE METHODS                 **/
     /**
      * Internal method for starting service
@@ -97,10 +111,10 @@ export default class Serivce extends Device {
         meta: IServiceMeta;
     }, gData: IGuardMessage): Promise<void>;
     /**
-     * Queues all shares data to be sent
-     *
+     * Sends the current shares of all service devices to subscribers
+      *
      * @param {Object} data - not used receive params
-    */
+     */
     apiServiceShares(data: {
         service: string;
     }, gData: IGuardMessage): Promise<void>;
@@ -112,6 +126,58 @@ export default class Serivce extends Device {
      * Calling a device port push
     */
     apiServiceDevicePush(data: IDevicePushRequest, gData: IGuardMessage): Promise<any>;
+    /**
+     * Get current shares data of a device
+    */
+    apiServiceDeviceShares(data: {
+        service: string;
+        device: string;
+    }, gData: IGuardMessage): Promise<Record<string, any>>;
+    /**
+     * Stop a running device in the service container
+     *
+     * Delegates to `Container.stopDevice()`: calls device `onStop()`, then
+     * `await onStopAsync()`, then marks it stopped. Reversible (can be started
+     * again via `deviceProcess`) and idempotent - a device that is not running
+     * is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
+     */
+    apiDeviceStop(data: {
+        service: string;
+        device: string;
+    }, gData: IGuardMessage): Promise<{
+        device: string;
+        started: boolean;
+    }>;
+    /**
+     * Start (process) a device in the service container
+     *
+     * Delegates to `Container.startDevice()`: calls device `onStart()`, then
+     * `await onStartAsync()`, then marks it started. Idempotent - an already
+     * started device is a no-op. Throws CONT_DEVICE_NF if the device id is unknown.
+     */
+    apiDeviceProcess(data: {
+        service: string;
+        device: string;
+    }, gData: IGuardMessage): Promise<{
+        device: string;
+        started: boolean;
+    }>;
+    /**
+     * Read the lifecycle status of a device in the service container
+     *
+     * Delegates to `Container.getDeviceStatus()`: the container-maintained
+     * record (state registered/started/stopped, since, last alert/error,
+     * counters). Read-only - no mutations. Throws CONT_DEVICE_NF if the
+     * device id is unknown.
+     */
+    apiDeviceStatus(data: {
+        service: string;
+        device: string;
+    }, gData: IGuardMessage): Promise<{
+        device: string;
+        started: boolean;
+        status: import("vrack2-core").IDeviceStatus;
+    }>;
     /**
      * Захват выхода устройства
     */
@@ -127,14 +193,61 @@ export default class Serivce extends Device {
     */
     apiCommandList(): Promise<any>;
     /**
-     * Getting device metric
-    */
-    apiServiceDeviceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
-    /**
-     * Getting device metric
-     * Obtaining system metrics. Those that were initialized at the VRack2 level
+     * Get the structure schema of the running service container
+     *
+     * Takes the live Container structure (the same data StructureStorage
+     * persists to disk). By default (compact:true) it is trimmed to devices +
+     * ports + connections only: no metrics, no actions, no display settings.
+     * compact:false returns the full container structure.
      */
-    apiServiceMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any>;
+    apiServiceStructure(data: {
+        service: string;
+        compact?: boolean;
+    }, gData: IGuardMessage): Promise<{
+        [key: string]: {
+            type: string;
+            ports: Array<{
+                port: string;
+                direct: string;
+                description?: string;
+            }>;
+            outputs: {
+                [key: string]: Array<{
+                    device: string;
+                    port: string;
+                }>;
+            };
+            inputs: {
+                [key: string]: Array<{
+                    device: string;
+                    port: string;
+                }>;
+            };
+        };
+    }>;
+    /**
+     * Live apply of the journal capture toggles (serviceLogSet → ServiceManager
+     * → this internal command). Capture checks meta at event time, so the new
+     * config takes effect on the very next event.
+     */
+    apiServiceJournalSet(data: {
+        service: string;
+        journal: IJournalToggles | null;
+    }, gData: IGuardMessage): Promise<{
+        journal: {
+            events: boolean;
+            ports: boolean;
+            metrics: boolean;
+        };
+    }>;
+    /**
+     * Effective journal capture config after the meta defaults are applied.
+     */
+    protected journalEffective(): {
+        events: boolean;
+        ports: boolean;
+        metrics: boolean;
+    };
     /**
      * Выполняет внутреннюю передачу события из основного родительского контейнера
      *
@@ -144,9 +257,15 @@ export default class Serivce extends Device {
         data: any;
     }): Promise<void>;
     /**
+     * Create the service MainProcess and attach it to the worker
+     * (parent container, MainProcess/ServiceContainer/Serviceinfo/ServiceMeta fields).
+     * @param start true — full start (confFile + container.meta), false — check only
+     */
+    protected createMainProcess(info: IServiceConfig, meta: IServiceMeta, start: boolean): Promise<MainProcess>;
+    /**
      * Bind container device terminate event
-    */
-    protected bindTerminate(): Promise<void>;
+     */
+    protected bindTerminate(): void;
     /**
      * Bind container devices events
      *
@@ -154,21 +273,40 @@ export default class Serivce extends Device {
      *
      * @see eventsChannels device events list
     */
-    protected bindContainerDeviceEvents(): Promise<void>;
+    protected bindContainerDeviceEvents(): void;
+    /**                 JOURNAL FORWARDING                 **/
+    /**
+     * Subscribe to the service container events (device channels, port
+      * pushes, metrics) and forward them in batches to the master Journal
+      * device. Capture toggles (journalEvents/journalMetrics/journalPorts) are
+      * checked at event time, so serviceLogSet applies live.
+     */
+    protected bindJournal(): void;
+    /**
+     * Journal capture toggle check against the service meta. Defaults: events
+     * and metrics on, ports off — port logging is a debug tool and must be
+     * enabled explicitly (journalPorts).
+     */
+    protected journalCapture(kind: 'events' | 'ports' | 'metrics'): boolean;
+    protected scheduleJournalFlush(): void;
+    /**
+     * Send the accumulated journal batch to the master (fire-and-forget via
+     * the worker `send` port → WorkersManager.journal → Journal device).
+     */
+    protected flushJournal(): void;
     /**
      * Bind render device event
      *
-     * Update render pull & render data
+     * Update render pull
      *
      * @see renderPull
-     * @see renderData
-    */
-    protected bindRenderEvent(): Promise<void>;
+     */
+    protected bindRenderEvent(): void;
     /**
      * Send broadcast for device render event
      *
      * @see bindRenderEvent
-    */
+     */
     protected serviceRender(): void;
     /**
      * Convert object to string using util.inspect
@@ -186,9 +324,34 @@ export default class Serivce extends Device {
     */
     protected broadcast(channel: string, data: any): void;
     /**
-     * Send termiate errro and terminate service process
-    */
-    protected serviceTerminate(error: Error): void;
-    protected exit(): Promise<void>;
+     * Graceful stop of the running service container and worker self-exit.
+     * Все завершающие процедуры — в единственной точке shutdown() (см. там).
+     * Main сбросил conf.autoReload перед командой, поэтому exit не вызовет автоперезапуск.
+     */
+    apiServiceStop(data: {
+        service: string;
+    }, gData: IGuardMessage): Promise<void>;
+    /**
+     * Завершение воркера сервиса: уведомить main об ошибке (если есть),
+     * остановить сервис (MainProcess.stop() — устройства + boot-классы),
+     * остановить воркер-контейнер, process.exit(0).
+     * Сюда сходятся все пути: команда stop, device.terminate,
+     * uncaughtException, ошибки start/check.
+     */
+    protected shutdown(error?: Error): Promise<void>;
+    protected notifyMainError(error: Error): void;
+    /**
+     * Терминальная ошибка сервиса: уведомление + завершение через единственную точку shutdown()
+     */
+    protected serviceTerminate(error: Error): Promise<void>;
     protected getNextCaptureIndex(): number;
+    /**
+     * Normalize a service's `bootstrap` entries.
+     *
+     * `mergeBootList` (vrack2-core) requires every boot entry to carry an
+     * `options` object, so a bare `{ "path": "..." }` — the natural way for a
+     * service to override our default `DeviceMetrics` — would throw
+     * BTSP_BAD_BOOTLIST. Fill `options: {}` where it is missing.
+     */
+    protected normalizeServiceBootstrap(service: any): any;
 }

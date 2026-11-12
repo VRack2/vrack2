@@ -12,7 +12,7 @@ export default class Broadcaster extends Device {
     outputs(): {
         [key: string]: BasicPort;
     };
-    process(): void;
+    onStart(): void;
     checkOptions(): {
         [key: string]: BasicType;
     };
@@ -50,7 +50,7 @@ export default class Broadcaster extends Device {
         providerId: number;
         clientId: number;
     }>;
-    preProcess(): void;
+    onRegister(): void;
     /**
      * Sending data to all channel subscribers
      *

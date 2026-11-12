@@ -18,20 +18,20 @@ export default class Broadcaster extends Device {
 
     inputs(): { [key: string]: BasicPort; } {
         return {
-            'clients.broadcast%d': Port.standart().dynamic(this.options.broadcastInputs).description('Broadcast to clients port'),
-            'clients.register': Port.standart().description('Register client port'),
-            'clients.unregister': Port.standart().description('Unregister client port')
+            'clients.broadcast%d': Port.standard().dynamic(this.options.broadcastInputs).description('Broadcast to clients port'),
+            'clients.register': Port.standard().description('Register client port'),
+            'clients.unregister': Port.standard().description('Unregister client port')
         }
     }
 
     outputs(): { [key: string]: BasicPort; } {
         return {
-            'register.command': Port.standart().description('Register command into master'),
-            'guard.broadcast': Port.standart().description('Guard broadcast send')
+            'register.command': Port.standard().description('Register command into master'),
+            'guard.broadcast': Port.standard().description('Guard broadcast send')
         }
     }
 
-    process(): void {
+    onStart(): void {
         this.ports.output['register.command'].push({
             command: 'channelJoin',
             short: 'Join to broadcast channel',
@@ -97,7 +97,7 @@ export default class Broadcaster extends Device {
     */
     protected clients = new Map<string, { providerId: number, clientId: number }>()
 
-    preProcess(): void {
+    onRegister(): void {
         for (let i = 1; i <= this.options.broadcastInputs; i++){
             this.addInputHandler('clients.broadcast' + i, this.inputClientsBroadcast.bind(this))
         }

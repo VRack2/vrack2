@@ -9,7 +9,7 @@
         {
             "id": "WorkerProvider",
             "type": "vrack2.WorkerProvider",
-            "options": { },
+            "options": { "ignoreSignals": false },
             "connections": [
                 "WorkerProvider.command -> Master.command1"
             ]

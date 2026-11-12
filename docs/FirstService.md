@@ -76,9 +76,9 @@ class Timer extends Device {
      * */ 
     inputs() {
         return {
-            'start': Port.standart().description('Запуск таймера'),
-            'stop': Port.standart().description('Остановка таймера'),
-            'reset': Port.standart().description('Сброс счетчика'),
+            'start': Port.standard().description('Запуск таймера'),
+            'stop': Port.standard().description('Остановка таймера'),
+            'reset': Port.standard().description('Сброс счетчика'),
         }
     }
     /**
@@ -86,7 +86,7 @@ class Timer extends Device {
      * */
     outputs() {
         return {
-            'tick': Port.standart().description('Выход сигнала таймера')
+            'tick': Port.standard().description('Выход сигнала таймера')
         }
     }
 
@@ -112,7 +112,7 @@ module.exports = Timer;
 
 Есть 2 типа портов - стардартный и возвращаемый. 
 
-Тип `Port.standart()` - означает, что мы используем стандартный тип порта. Такие порты используются для вызова события устройства и передачи данных в него. 
+Тип `Port.standard()` - означает, что мы используем стандартный тип порта. Такие порты используются для вызова события устройства и передачи данных в него. 
 
 Тип - `Port.return()` - используется, когда порт должен возвращать значение. Разные типы портов не совместимы между друг другом.
 
@@ -169,16 +169,16 @@ class Timer extends Device {
     /** Метод должен вернуть список входящих портов устройства */ 
     inputs() {
         return {
-            'start': Port.standart().description('Запуск таймера'),
-            'stop': Port.standart().description('Остановка таймера'),
-            'reset': Port.standart().description('Сброс счетчика'),
+            'start': Port.standard().description('Запуск таймера'),
+            'stop': Port.standard().description('Остановка таймера'),
+            'reset': Port.standard().description('Сброс счетчика'),
         }
     }
 
     /** Метод должен вернуть список исходящих портов устройства */
     outputs() {
         return {
-            'tick': Port.standart().description('Выход сигнала таймера')
+            'tick': Port.standard().description('Выход сигнала таймера')
         }
     }
 
@@ -200,7 +200,7 @@ class Timer extends Device {
     timer = null
 
     // Метод будет запущен при старте устройства
-    process() {
+    onStart() {
         // Если runAtStart = true - значит запускаем таймер сразу
         if (this.options.runAtStart) this.inputStart()
         this.render(); // Отправляем shares данные для онлайн наблюдения
@@ -298,7 +298,7 @@ class CpuInfo extends Device {
      * */ 
     inputs() {
         return {
-            'gate': Port.standart().description('Принимает сигнал для посчета информации о CPU')
+            'gate': Port.standard().description('Принимает сигнал для посчета информации о CPU')
         }
     }
 
@@ -332,19 +332,19 @@ const { Device, Port, Metric } = require("vrack2-core");
     /** Должен вернуть список метрик */
     metrics() {
         return {
-            'cpu.user': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Потребление CPU пользователем'),
-            'cpu.system': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Потребление CPU системой'),
-            'cpu.total': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Общее потребление')
+            'cpu.user': Metric.one().descriptions('Потребление CPU пользователем'),
+            'cpu.system': Metric.one().descriptions('Потребление CPU системой'),
+            'cpu.total': Metric.one().descriptions('Общее потребление')
         }
     }
 
 ```
 
-VRack2 для хранение метрик использует базу данных [VRackDB](https://github.com/ponikrf/VRackDB/wiki/RU%E2%80%90DOC%E2%80%90V3.0).
+VRack2 для хранение метрик использует **унифицированный журнал мастера** — устройство `vrack2.Journal` ([vrack2-journal-db](https://github.com/ponikrf/vrack2-journal-db), стор `journals/vrack2`, таблица `service_metric`); чтение — команда `serviceDeviceMetric` (`service` — id контейнера: `<svc>`, `worker::<svc>`, `vrack2`).
 
-Определение `Metric.inS()` сообщает, что время метрики храниться в секундах. `retentions('1s:10m, 5s:2h, 15s:1d')`- определяет длительность и точность хранения.
+`Metric.one()` объявляет одиночную метрику — только её метаданные (описание, дополнительную информацию). Хранение и слои retention определяет не устройство, а хранилище: в VRack2 их единообразно задаёт журнал параметром `metricRetention` устройства `Journal`.
 
-Для лучшего опыта рекомендуется ознакомится с документацией [VRackDB](https://github.com/ponikrf/VRackDB/wiki/RU%E2%80%90DOC%E2%80%90V3.0).
+Подробнее о журнале платформы — [ServiceFile.md](./ServiceFile.md); о standalone-хранилище — документация [VRackDB](https://github.com/ponikrf/VRackDB/wiki/RU%E2%80%90DOC%E2%80%90V3.0).
 
 
 ### Дописываем `CpuInfo.js`
@@ -359,16 +359,16 @@ class CpuInfo extends Device {
     /** Метод должен вернуть список входящих портов устройства */ 
     inputs() {
         return {
-            'gate': Port.standart().description('Принимает сигнал для посчета информации о CPU')
+            'gate': Port.standard().description('Принимает сигнал для посчета информации о CPU')
         }
     }
 
     /** Должен вернуть список метрик */
     metrics() {
         return {
-            'cpu.user': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Потребление CPU пользователем'),
-            'cpu.system': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Потребление CPU системой'),
-            'cpu.total': Metric.inS().retentions('1s:10m, 5s:2h, 15s:1d').description('Общее потребление')
+            'cpu.user': Metric.one().descriptions('Потребление CPU пользователем'),
+            'cpu.system': Metric.one().descriptions('Потребление CPU системой'),
+            'cpu.total': Metric.one().descriptions('Общее потребление')
         }
     }
 
@@ -463,7 +463,7 @@ module.exports = CpuInfo;
     "group": "сервисы",
     "autoStart": true,
     "autoReload": true,
-    "description": "Позволяет посмотреть информацию о потреблении CPU",
+    "description": "Позволяет посмотреть информацию о потреблении CPU"
 }
 ```
 

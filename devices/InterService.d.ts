@@ -11,8 +11,8 @@ export default class InterService extends Device {
     checkOptions(): {
         [key: string]: BasicType;
     };
-    preProcess(): void;
-    process(): void;
+    onRegister(): void;
+    onStart(): void;
     /**
      * Run internal command WorkerProvider.
      * The method is transparent. Error handling takes place at the command call level of this device,

@@ -6,7 +6,6 @@ import ICommandRegister from "./interfaces/ICommandRegister";
 
 ErrorManager.register(
   'Master',
-  'QHALOLOQBEMN',
   'MASTER_COMMAND_NOT_FOUND',
   'The master did not find a suitable registered command',
   {
@@ -16,14 +15,12 @@ ErrorManager.register(
 
 ErrorManager.register(
   'Master',
-  'URDWFPFHKEAA',
   'MASTER_NO_REQ_DATA',
   'It is necessary to specify the command and the data for it',
 )
 
 ErrorManager.register(
   'Master',
-  'ZEAJYEQFWCUM',
   'MASTER_ACCESS_DENIED',
   'You need to raise the access level to execute this command',
   {
@@ -33,7 +30,6 @@ ErrorManager.register(
 
 ErrorManager.register(
   'Master',
-  'JTTWDXLMPKXD',
   'MASTER_ERROR_VALIDATION',
   'The data does not meet the teams requirements'
 )
@@ -63,7 +59,7 @@ export default class Master extends Device {
   inputs(): { [key: string]: BasicPort; } {
     const ports: { [key: string]: BasicPort; } = {
       'command%d': Port.return().dynamic(this.options.commandPorts).requirement(Rule.object().example({}).description('')),
-      'register%d': Port.standart().dynamic(this.options.registerPorts)
+      'register%d': Port.standard().dynamic(this.options.registerPorts)
     }
     return ports
   }
@@ -84,7 +80,7 @@ export default class Master extends Device {
     }
   }
 
-  preProcess(): void {
+  onRegister(): void {
     for (let i = 1; i <= this.options.registerPorts; i++) {
       this.addInputHandler('register' + i, (data: ICommandRegister) => {
         this.commands[data.command] = data
@@ -99,24 +95,15 @@ export default class Master extends Device {
 
   }
 
-  process(): void {
+  onStart(): void {
     this.commands['commandsList'] = {
       command: 'commandsList',
       short: 'Master command list',
       description: 'Return all command registered',
-      level: 1000,
+      level: 3,
       icon:'list-ul',
       owner: this.type,
-      return: Rule.array().content(Rule.object().fields({
-        command: Rule.string().example('commandName').description('Command name/identifier'),
-        description: Rule.string().example('Markdown command description').description('Command description'),
-        level: Rule.number().integer().example(3).description('Level for access this command'),
-        rules: Rule.array().example([]).content(Rule.object().description('Rule Object')).description('Array Rules object for validation data for this command'),
-        owner: Rule.string().example('Master').description('Owner devices of this command'),
-        short: Rule.string().example('Short Name').description('Short description (3-5 words)'),
-        icon: Rule.string().example('sd-card').description('Bootstrap icon (without bi- class only end like a "search","sd-card","share" & etc )'),
-        return: Rule.object().example('any').description('Rule object of return type'),
-      })).description('Array contain all command for this master'),
+      return: Rule.object().description('Map of all registered commands: { [commandName]: { command, description, level, rules, owner, short, icon, return } }'),
       handler: this.apiCommandList.bind(this),
     }
   }

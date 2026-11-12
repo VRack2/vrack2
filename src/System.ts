@@ -1,10 +1,19 @@
-import { BasicMetric, Device, DeviceManager, DeviceMetrics, Metric, Port, Rule, StructureStorage } from "vrack2-core";
+import { BasicType, Device, DeviceManager, ErrorManager, Metric, MetricOne, Port, Rule, StructureStorage } from "vrack2-core";
 import { IContainerStructure } from "vrack2-core/lib/Container";
 import os from "os"
 import process from "process"
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
-import IGuardMessage from "./interfaces/IGuardMessage";
-import IDeviceMetricRequest from "./interfaces/IDeviceMetricRequest";
+
+ErrorManager.register('System', 'SYS_SHUTDOWN_TIMEOUT',
+  'Graceful shutdown did not finish within shutdownTimeout; the process force-exits', {
+  timeout: Rule.number().required().example(10000).description('Shutdown timeout, ms')
+})
+
+ErrorManager.register('System', 'SYS_SHUTDOWN_STOP_FAILED',
+  'Container.stopAll() failed during graceful shutdown', {})
+
+ErrorManager.register('System', 'SYS_SHUTDOWN_DESTROY_FAILED',
+  'Bootstrap.destroyAll() failed during graceful shutdown', {})
 
 export default class System extends Device {
 
@@ -16,21 +25,33 @@ export default class System extends Device {
 
   outputs(): { [key: string]: BasicPort; } {
     return {
-      'register.command': Port.standart().description('Register command into master'),
+      'register.command': Port.standard().description('Register command into master'),
     }
   }
 
-  metrics(): { [key: string]: BasicMetric; } {
+  checkOptions(): { [key: string]: BasicType; } {
     return {
-      'memory.rss': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory rss'),
-      'memory.heaptotal': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapTotal'),
-      'memory.heapused': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory heapUsed'),
-      'memory.external': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory external'),
-      'memory.arraybuffers': Metric.inS().retentions('5s:30m, 15s:2h, 1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('System memory arrayBuffers'),
+      shutdownTimeout: Rule.number().integer().min(1000).default(15000).required()
+        .description('Graceful shutdown watchdog (ms): if Container.stopAll/destroyAll does not finish in time, force-exit'),
     }
   }
 
-  process(): void {
+  metrics(): { [key: string]: MetricOne; } {
+    return {
+      'memory.rss': Metric.one().descriptions('System memory rss'),
+      'memory.heaptotal': Metric.one().descriptions('System memory heapTotal'),
+      'memory.heapused': Metric.one().descriptions('System memory heapUsed'),
+      'memory.external': Metric.one().descriptions('System memory external'),
+      'memory.arraybuffers': Metric.one().descriptions('System memory arrayBuffers'),
+    }
+  }
+
+  /** Memory-metrics interval handle (cleared on onStop) */
+  protected memTimer?: NodeJS.Timeout
+
+  onStart(): void {
+    this.bindShutdown()
+
     this.ports.output['register.command'].push({
       command: 'structureGet',
       short: 'Get structure',
@@ -57,35 +78,6 @@ export default class System extends Device {
       },
     })
 
-    this.ports.output['register.command'].push({
-      command: 'systemMetric',
-      short: 'Get system metric',
-      description: 'Getting a system metrics',
-      level: 3,
-      owner: this.type,
-      icon: 'graph-up',
-      handler: this.apiSystemMetric.bind(this),
-      rules: {
-        service: Rule.string().maxLength(120).default('not used').required().description('Service id (not used for this action)'),
-        device: Rule.string().maxLength(120).example('DeviceID').required().description('Device id'),
-        metric: Rule.string().maxLength(120).example('metric.id').required().description('Device metric path'),
-        period: Rule.string().maxLength(120).example('start:end').required().description('VRackDB period'),
-        precision: Rule.string().maxLength(60).required().example('400').description('VRackDB precision'),
-        func: Rule.string().default('last').maxLength(10).description('Read function (last,first,min,max,avg,sum)')
-      },
-      return: Rule.object().fields({
-        relevant: Rule.boolean().default(false).example(false).description('result relevance flag'),
-        start: Rule.number().integer().example(1).description('Beginning of the period'),
-        end: Rule.number().integer().example(100).description('End of period '),
-        rows: Rule.array().content(
-            Rule.object().fields({
-                time: Rule.number().integer().example(10).description('Time in MTU'),
-                value: Rule.number().example(12.3223).description('Metric value || null')
-            }).description('Metric storage object')
-        ).description('Array of metrics')
-      }).description('Metric request result - see vrack-db read documentation')
-    })
-    
     this.ports.output['register.command'].push({
       command: 'systemInfo',
       short: 'Get sysinfo',
@@ -123,7 +115,7 @@ export default class System extends Device {
       }).description('Device info object')
     })
 
-    setInterval(() => {
+    this.memTimer = setInterval(() => {
       const mem = process.memoryUsage()
       this.metric('memory.rss', Math.round(mem.rss / 1024 / 1024))
       this.metric('memory.heaptotal', Math.round(mem.heapTotal / 1024 / 1024))
@@ -132,6 +124,62 @@ export default class System extends Device {
       this.metric('memory.arraybuffers', Math.round(mem.arrayBuffers / 1024 / 1024))
     }, 5000)
 
+  }
+
+  /**
+   * Release the memory-metrics interval owned by this device. Without this the
+   * interval keeps the event loop alive after Container.stopAll(), so the
+   * process only exits because the shutdown chain calls process.exit()
+   * explicitly, and restarting the device stacks a second interval.
+   */
+  onStop(): void {
+    if (this.memTimer) { clearInterval(this.memTimer); this.memTimer = undefined }
+  }
+
+  /**
+   * Graceful shutdown of the master container on SIGINT/SIGTERM.
+   *
+   * The framework does not manage the host process lifecycle, so this device
+   * (the platform's own System device) owns it: on a termination signal it
+   * runs the canonical teardown — `Container.stopAll()` (devices stopped in
+   * reverse start order: ServiceManager.onStopAsync stops every service, so
+   * their final journal batches reach the still-open Journal tables; Journal
+   * is started first and therefore stopped last, flushing its segments) then
+   * `Bootstrap.destroyAll()` (boot-class stores closed) — and only then exits
+   * the process.
+   *
+   * Idempotent latch: the journal-db Shutdown hook re-raises the same signal
+   * synchronously after draining the WAL; that re-entrant call is ignored. A
+   * genuine second signal (a real second Ctrl+C, > 1s later) force-exits.
+   */
+  protected bindShutdown(): void {
+    let stoppingAt = 0
+    const handler = (signal: string) => {
+      if (stoppingAt) {
+        // Re-entrant re-raise from the journal-db hook (same tick) — ignore.
+        // A real second signal (user pressed Ctrl+C again) — force exit.
+        if (Date.now() - stoppingAt > 1000) process.exit(1)
+        return
+      }
+      stoppingAt = Date.now()
+      this.terminal('shutdown signal received', { signal })
+      // Watchdog: if teardown hangs (a device onStopAsync never resolves),
+      // force-exit. unref so it doesn't hold the loop when teardown is fast.
+      const watchdog = setTimeout(() => {
+        this.error('graceful shutdown timed out — force exit', ErrorManager.make('SYS_SHUTDOWN_TIMEOUT', { timeout: this.options.shutdownTimeout }))
+        process.exit(1)
+      }, this.options.shutdownTimeout)
+      watchdog.unref?.()
+      let hadError = false
+      Promise.resolve()
+        .then(() => this.Container.stopAll())
+        .catch((e) => { hadError = true; this.error('container stopAll failed during shutdown', ErrorManager.make('SYS_SHUTDOWN_STOP_FAILED').add(e as Error)) })
+        .then(() => this.Container.Bootstrap.destroyAll())
+        .catch((e) => { hadError = true; this.error('bootstrap destroyAll failed during shutdown', ErrorManager.make('SYS_SHUTDOWN_DESTROY_FAILED').add(e as Error)) })
+        .then(() => { clearTimeout(watchdog); process.exit(hadError ? 1 : 0) })
+    }
+    process.on('SIGINT', () => handler('SIGINT'))
+    process.on('SIGTERM', () => handler('SIGTERM'))
   }
 
   /**
@@ -154,19 +202,8 @@ export default class System extends Device {
   }
 
   /**
-   * Getting device metric
-   * Obtaining system metrics. Those that were initialized at the VRack2 level
-  */
-  async apiSystemMetric(data: IDeviceMetricRequest, gData: IGuardMessage): Promise<any> {
-    const DM = this.Container.Bootstrap.getBootClass('DeviceMetrics', DeviceMetrics) as DeviceMetrics
-    let precision: string | number = data.precision
-    if (!isNaN(parseInt(precision))) precision = parseInt(precision)
-    return DM.read(data.device, data.metric, data.period, precision, data.func)
-  }
-
-  /**
    * Returns a list of device vendors
-  */
+   */
   async apiVendorList(): Promise<Array<string>> {
     const DM = this.Container.Bootstrap.getBootClass('DeviceManager', DeviceManager) as DeviceManager
     return DM.getVendorList()

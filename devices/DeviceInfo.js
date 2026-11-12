@@ -23,13 +23,13 @@ class DeviceInfo extends vrack2_core_1.Device {
     }
     outputs() {
         return {
-            'register.command': vrack2_core_1.Port.standart().description('Регистрация своей команды в мастере'),
+            'register.command': vrack2_core_1.Port.standard().description('Регистрация своей команды в мастере'),
             'worker.add': vrack2_core_1.Port.return().description('Запуск воркера через WorkersManager'),
             'worker.stop': vrack2_core_1.Port.return().description('Остановка воркера через WorkersManager'),
             'worker.request': vrack2_core_1.Port.return().description('Отправка запроса через WorkersManager'),
         };
     }
-    process() {
+    onStart() {
         this.ports.output['register.command'].push({
             command: 'vendorList',
             short: 'Get vendors list',

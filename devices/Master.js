@@ -10,14 +10,14 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
-vrack2_core_1.ErrorManager.register('Master', 'QHALOLOQBEMN', 'MASTER_COMMAND_NOT_FOUND', 'The master did not find a suitable registered command', {
+vrack2_core_1.ErrorManager.register('Master', 'MASTER_COMMAND_NOT_FOUND', 'The master did not find a suitable registered command', {
     command: vrack2_core_1.Rule.string().description('Input command')
 });
-vrack2_core_1.ErrorManager.register('Master', 'URDWFPFHKEAA', 'MASTER_NO_REQ_DATA', 'It is necessary to specify the command and the data for it');
-vrack2_core_1.ErrorManager.register('Master', 'ZEAJYEQFWCUM', 'MASTER_ACCESS_DENIED', 'You need to raise the access level to execute this command', {
+vrack2_core_1.ErrorManager.register('Master', 'MASTER_NO_REQ_DATA', 'It is necessary to specify the command and the data for it');
+vrack2_core_1.ErrorManager.register('Master', 'MASTER_ACCESS_DENIED', 'You need to raise the access level to execute this command', {
     level: vrack2_core_1.Rule.number().description('Requiered level')
 });
-vrack2_core_1.ErrorManager.register('Master', 'JTTWDXLMPKXD', 'MASTER_ERROR_VALIDATION', 'The data does not meet the teams requirements');
+vrack2_core_1.ErrorManager.register('Master', 'MASTER_ERROR_VALIDATION', 'The data does not meet the teams requirements');
 class Master extends vrack2_core_1.Device {
     constructor() {
         super(...arguments);
@@ -31,7 +31,7 @@ class Master extends vrack2_core_1.Device {
     inputs() {
         const ports = {
             'command%d': vrack2_core_1.Port.return().dynamic(this.options.commandPorts).requirement(vrack2_core_1.Rule.object().example({}).description('')),
-            'register%d': vrack2_core_1.Port.standart().dynamic(this.options.registerPorts)
+            'register%d': vrack2_core_1.Port.standard().dynamic(this.options.registerPorts)
         };
         return ports;
     }
@@ -49,7 +49,7 @@ class Master extends vrack2_core_1.Device {
                 .description('Count of ports for registers command')
         };
     }
-    preProcess() {
+    onRegister() {
         for (let i = 1; i <= this.options.registerPorts; i++) {
             this.addInputHandler('register' + i, (data) => {
                 this.commands[data.command] = data;
@@ -61,24 +61,15 @@ class Master extends vrack2_core_1.Device {
             });
         }
     }
-    process() {
+    onStart() {
         this.commands['commandsList'] = {
             command: 'commandsList',
             short: 'Master command list',
             description: 'Return all command registered',
-            level: 1000,
+            level: 3,
             icon: 'list-ul',
             owner: this.type,
-            return: vrack2_core_1.Rule.array().content(vrack2_core_1.Rule.object().fields({
-                command: vrack2_core_1.Rule.string().example('commandName').description('Command name/identifier'),
-                description: vrack2_core_1.Rule.string().example('Markdown command description').description('Command description'),
-                level: vrack2_core_1.Rule.number().integer().example(3).description('Level for access this command'),
-                rules: vrack2_core_1.Rule.array().example([]).content(vrack2_core_1.Rule.object().description('Rule Object')).description('Array Rules object for validation data for this command'),
-                owner: vrack2_core_1.Rule.string().example('Master').description('Owner devices of this command'),
-                short: vrack2_core_1.Rule.string().example('Short Name').description('Short description (3-5 words)'),
-                icon: vrack2_core_1.Rule.string().example('sd-card').description('Bootstrap icon (without bi- class only end like a "search","sd-card","share" & etc )'),
-                return: vrack2_core_1.Rule.object().example('any').description('Rule object of return type'),
-            })).description('Array contain all command for this master'),
+            return: vrack2_core_1.Rule.object().description('Map of all registered commands: { [commandName]: { command, description, level, rules, owner, short, icon, return } }'),
             handler: this.apiCommandList.bind(this),
         };
     }

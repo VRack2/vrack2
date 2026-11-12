@@ -50,7 +50,18 @@ export default class WorkersManager extends Device {
      * Contains a list of messages that are queued for a particular worker
     */
     private workersQueue;
-    preProcess(): void;
+    onRegister(): void;
+    /**
+     * Safety net on container stop: terminate every worker still alive.
+     *
+     * No race with ServiceManager: Container.stopAll stops devices in reverse
+     * start order and awaits each stop, so ServiceManager.onStopAsync has
+     * already stopped (and awaited the exit of) every service worker before
+     * this hook runs. What remains here are only orphaned non-service workers
+     * (e.g. DeviceInfo deviceProcess workers). The 'exit' handlers clean the
+     * maps and reject queued requests as usual.
+     */
+    onStop(): void;
     /**
      * Creating a Worker - VRack2 service.
      *

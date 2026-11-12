@@ -1,3 +1,4 @@
 /node_modules
 /package-lock.json
 /vrack2.conf.json
+.kilo/

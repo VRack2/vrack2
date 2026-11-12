@@ -7,8 +7,8 @@ import IBroadcast from "./interfaces/IBroadcast";
 
 
 
-ErrorManager.register('WorkersManager','ASF6TC4U7J6P', 'WM_INTERNAL_ERROR', 'An error occurred within the service being used, causing it to terminate.')
-ErrorManager.register('WorkersManager','U4HUK15C0UVO', 'WM_WORKER_EXIT', 'The workers job was terminated, all tasks were deleted.')
+ErrorManager.register('WorkersManager','WM_INTERNAL_ERROR', 'An error occurred within the service being used, causing it to terminate.')
+ErrorManager.register('WorkersManager','WM_WORKER_EXIT', 'The workers job was terminated, all tasks were deleted.')
 
 
 /**
@@ -67,7 +67,8 @@ export default class WorkersManager extends Device {
     outputs(): { [key: string]: BasicPort; } {
         return {
             'master.command': Port.return(),
-            'broadcast': Port.standart()
+            'broadcast': Port.standard(),
+            'journal': Port.standard().description('Journal batches from service workers (to the Journal device)')
         }
     }
 
@@ -102,12 +103,26 @@ export default class WorkersManager extends Device {
     */
     private workersQueue: Array<Array<number>> = []
 
-    preProcess(): void {
+    onRegister(): void {
         for (let i = 1; i<= this.options.workerInputs; i++){
             this.addInputHandler(`worker${i}.add`, this.inputWorkerAdd.bind(this))
             this.addInputHandler(`worker${i}.stop`, this.inputWorkerStop.bind(this))
             this.addInputHandler(`worker${i}.request`, this.inputWorkerRequest.bind(this))
         }
+    }
+
+    /**
+     * Safety net on container stop: terminate every worker still alive.
+     *
+     * No race with ServiceManager: Container.stopAll stops devices in reverse
+     * start order and awaits each stop, so ServiceManager.onStopAsync has
+     * already stopped (and awaited the exit of) every service worker before
+     * this hook runs. What remains here are only orphaned non-service workers
+     * (e.g. DeviceInfo deviceProcess workers). The 'exit' handlers clean the
+     * maps and reject queued requests as usual.
+     */
+    onStop(): void {
+        for (const worker of this.workers.values()) worker.terminate()
     }
 
     /**
@@ -137,6 +152,7 @@ export default class WorkersManager extends Device {
             nWorker.on('message', (mData: IWorkerMessage)=>{
                 if (mData.internal) return this.internal(id, mData)
                 if (mData.command === 'broadcast') return this.ports.output['broadcast'].push(mData)
+                if (mData.command === 'journal') return this.ports.output['journal'].push(mData)
                 if (mData.command === 'error') { 
                     data.onError(ErrorManager.make('WM_INTERNAL_ERROR').add(mData.error as Error))
                     return

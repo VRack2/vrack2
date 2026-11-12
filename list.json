@@ -1,6 +1,5 @@
 {
     "Master": "devices/Master",
-    "Interval": "devices/Interval",
     "Guard": "devices/Guard",
     "WSProvider": "devices/WSProvider",
     "ProvidersClients": "devices/ProvidersClients",
@@ -13,5 +12,6 @@
     "System": "devices/System",
     "InterService": "devices/InterService",
     "DeviceInfo": "devices/DeviceInfo",
-    "DeviceWorker": "devices/DeviceWorker"
+    "DeviceWorker": "devices/DeviceWorker",
+    "Journal": "devices/Journal"
 }

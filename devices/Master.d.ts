@@ -29,8 +29,8 @@ export default class Master extends Device {
     checkOptions(): {
         [key: string]: BasicType;
     };
-    preProcess(): void;
-    process(): void;
+    onRegister(): void;
+    onStart(): void;
     /**
      * Returns the list of Master commands
     */

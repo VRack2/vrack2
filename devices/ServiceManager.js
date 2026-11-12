@@ -15,23 +15,45 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const vrack2_core_1 = require("vrack2-core");
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
-vrack2_core_1.ErrorManager.register('ServiceManager', 'QNTN63C26KNS', 'SM_SERVICE_NOT_FOUND', 'Service of this id not found', {
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SERVICE_NOT_FOUND', 'Service of this id not found', {
     id: vrack2_core_1.Rule.string().example('testid').description('Service ID')
 });
-vrack2_core_1.ErrorManager.register('ServiceManager', '4BJZAFKFLV4O', 'SM_META_NOT_FOUND', 'Metadata of this id service not found', {
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_META_NOT_FOUND', 'Metadata of this id service not found', {
     id: vrack2_core_1.Rule.string().example('testid').description('Service ID')
 });
-vrack2_core_1.ErrorManager.register('ServiceManager', 'QZLBEXAB4CMF', 'SM_SERVICE_RUNNING', 'Service is already running', {
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SERVICE_RUNNING', 'Service is already running', {
     id: vrack2_core_1.Rule.string().example('testid').description('Service ID')
 });
-vrack2_core_1.ErrorManager.register('ServiceManager', 'CLCN1U9I41KR', 'SM_SERVICE_NOT_RUN', 'Service not run', {
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SERVICE_NOT_RUN', 'Service not run', {
     id: vrack2_core_1.Rule.string().example('testid').description('Service ID')
 });
-vrack2_core_1.ErrorManager.register('ServiceManager', 'CIRBC9815SFP', 'SM_SERVICE_DIR_NOT_FOUND', 'Service dir not found', {
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SERVICE_DIR_NOT_FOUND', 'Service dir not found', {
     dir: vrack2_core_1.Rule.string().example('path/to/dir').description('Service dir')
 });
-vrack2_core_1.ErrorManager.register('ServiceManager', 'D32C9P24SVPQ', 'SM_SUMBASTER_COMMAND_NOT_FOUND', 'Service  submaster command not found', {
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SUMBASTER_COMMAND_NOT_FOUND', 'Service  submaster command not found', {
     command: vrack2_core_1.Rule.string().example('testCommand').description('Submaster command name')
+});
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SERVICE_STOP_TIMEOUT', 'Graceful service stop timed out, the worker was force-terminated. Its container (and possibly journal tail) may not have shut down cleanly', {
+    id: vrack2_core_1.Rule.string().example('testid').description('Service ID')
+});
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SERVICE_STOP_ERROR', 'Failed to stop a running service during shutdown (best-effort: the remaining services are still stopped)', {
+    id: vrack2_core_1.Rule.string().example('testid').description('Service ID')
+});
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_META_SAVE_ERROR', 'Failed to persist the service meta (journal toggles) to disk', {
+    service: vrack2_core_1.Rule.string().example('testid').description('Service ID'),
+    path: vrack2_core_1.Rule.string().example('path/to/x.meta.json').description('Meta file path')
+});
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_JOURNAL_APPLY_ERROR', 'Failed to live-apply journal capture toggles to a running service', {
+    service: vrack2_core_1.Rule.string().example('testid').description('Service ID')
+});
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SERVICE_CONVERT_ERROR', 'Failed to convert a service file into the internal structure (autoReload watch)', {
+    service: vrack2_core_1.Rule.string().example('testid').description('Service ID'),
+    dir: vrack2_core_1.Rule.string().example('./services').description('Services dir'),
+    filename: vrack2_core_1.Rule.string().example('test-service.json').description('Service file name')
+});
+vrack2_core_1.ErrorManager.register('ServiceManager', 'SM_SUBMASTER_EVENT_ERROR', 'Failed to forward a parent-container event to the service via submaster', {
+    service: vrack2_core_1.Rule.string().example('testid').description('Service ID'),
+    channel: vrack2_core_1.Rule.string().example('Service.parent.event').description('Container channel')
 });
 class ServiceManager extends vrack2_core_1.Device {
     constructor() {
@@ -80,6 +102,8 @@ class ServiceManager extends vrack2_core_1.Device {
          * В этой очереди хранятся таймауты перегенерации
          * */
         this.Queue = new Map();
+        /** fs.watch handles of the service directories (closed on onStop) */
+        this.watchers = [];
         /**
          * Поля конфигурации сервиса для документации
         */
@@ -103,11 +127,11 @@ class ServiceManager extends vrack2_core_1.Device {
     }
     outputs() {
         return {
-            'register.command': vrack2_core_1.Port.standart().description('Register command into master'),
+            'register.command': vrack2_core_1.Port.standard().description('Register command into master'),
             'worker.add': vrack2_core_1.Port.return().description('Run new worker for service'),
             'worker.stop': vrack2_core_1.Port.return().description('Stop service worker '),
             'worker.request': vrack2_core_1.Port.return().description('Send request to worker'),
-            'broadcast': vrack2_core_1.Port.standart().description('Send broadcast port'),
+            'broadcast': vrack2_core_1.Port.standard().description('Send broadcast port'),
         };
     }
     inputs() {
@@ -119,14 +143,15 @@ class ServiceManager extends vrack2_core_1.Device {
         return {
             autoStart: vrack2_core_1.Rule.boolean().default(true).required().description('Global control for autostart services at VRack start'),
             autoReload: vrack2_core_1.Rule.boolean().default(true).required().description('Global control for autoReload services if it crached'),
+            stopTimeout: vrack2_core_1.Rule.number().integer().min(100).default(5000).required().description('Graceful service stop timeout (ms): max time to wait for the worker to stop its own container and exit before force-terminating it'),
             printErrors: vrack2_core_1.Rule.boolean().default(true).required().description('Print errros if service is crashed'),
             ignoreAutoReloadErrors: vrack2_core_1.Rule.array().default([
-                'CTR_CONF_EXTENDS_PROBLEM',
-                'CTR_ERROR_INIT_DEVICE',
-                'CTR_DEVICE_PROCESS_EXCEPTION',
-                'CTR_DEVICE_PROCESS_PROMISE_EXCEPTION',
-                'CTR_ERROR_INIT_CONNECTION',
-                'CTR_IGNORE_SERVICE_AUTORELOAD'
+                'SLDR_CONF_EXTENDS_PROBLEM',
+                'SLDR_ERROR_INIT_DEVICE',
+                'CONT_DEVICE_PROCESS_EXCEPTION',
+                'CONT_DEVICE_PROCESS_PROMISE_EXCEPTION',
+                'SLDR_ERROR_INIT_CONNECTION',
+                'CONT_IGNORE_SERVICE_AUTORELOAD'
             ]).required().description('List of errors that the system ignores to restart the service'),
             servicesDirs: vrack2_core_1.Rule.array().default([{ dir: './services', generate: true }]).content(vrack2_core_1.Rule.object().fields({
                 dir: vrack2_core_1.Rule.string().required().description('Service dir path'),
@@ -134,7 +159,7 @@ class ServiceManager extends vrack2_core_1.Device {
             })),
         };
     }
-    process() {
+    onStart() {
         this.ports.output['register.command'].push({
             command: 'service',
             short: 'Get service info',
@@ -174,8 +199,8 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'list-stars',
             handler: this.apiServiceList.bind(this),
-            return: vrack2_core_1.Rule.array().content(this.ServiceRule)
-                .description('List array of services configs')
+            return: vrack2_core_1.Rule.object()
+                .description('Map of all services: { [serviceId]: IServiceConfig + IServiceMeta }')
         });
         this.ports.output['register.command'].push({
             command: 'serviceUpdateList',
@@ -185,8 +210,8 @@ class ServiceManager extends vrack2_core_1.Device {
             owner: this.type,
             icon: 'arrow-repeat',
             handler: this.apiServiceListUpdate.bind(this),
-            return: vrack2_core_1.Rule.object().fields({ serviceID: this.ServiceRule })
-                .description('List array of services configs')
+            return: vrack2_core_1.Rule.object()
+                .description('Map of all services (after rescan): { [serviceId]: IServiceConfig + IServiceMeta }')
         });
         this.ports.output['register.command'].push({
             command: 'serviceStart',
@@ -244,13 +269,56 @@ class ServiceManager extends vrack2_core_1.Device {
             return: vrack2_core_1.Rule.object().example({}).description('Empty object')
         });
     }
-    processPromise() {
+    onStartAsync() {
         return __awaiter(this, void 0, void 0, function* () {
             yield this.apiServiceListUpdate(); // Обновляем список сервисов 
             this.servicesWatch(); // Начинаем отслеживание сервисных директорий
             if (this.options.autoStart)
                 this.servicesStart(); // Запуск сервисов который должны быть запущены со старта
         });
+    }
+    /**
+     * Остановка контейнера (Container.stopAll): останавливаем все запущенные
+     * сервисы штатным каскадом apiServiceStop — воркер сам сбрасывает журнал
+     * и гасит свой контейнер. Best-effort: ошибка остановки одного сервиса
+     * не должна блокировать остановку остальных.
+     *
+     * Порядок stopAll (обратный порядку старта) гарантирует, что этот хук
+     * отрабатывает раньше Journal.onStop — финальные батчи сервисов попадают
+     * в еще открытые таблицы журнала.
+     */
+    onStopAsync() {
+        return __awaiter(this, void 0, void 0, function* () {
+            for (const id of Object.keys(this.servicesWorker)) {
+                try {
+                    yield this.apiServiceStop({ service: id });
+                }
+                catch (error) {
+                    this.error('service stop failed during shutdown', vrack2_core_1.ErrorManager.make('SM_SERVICE_STOP_ERROR', { id }).add(error));
+                }
+            }
+        });
+    }
+    /**
+     * Освобождение хост-ресурсов устройства (перед onStopAsync): закрываем
+     * файловые watch-еры сервисных директорий (иначе они держат event loop
+     * живым после stopAll и виснут при рестарте устройства) и снимаем
+     * подвешенные таймеры — debounce генерации сервисов (Queue) и таймеры
+     * автоперезапуска (servicesTimer).
+     */
+    onStop() {
+        for (const watcher of this.watchers)
+            watcher.close();
+        this.watchers = [];
+        for (const timer of this.Queue.values())
+            if (timer)
+                clearTimeout(timer);
+        this.Queue.clear();
+        for (const id of Object.keys(this.servicesTimer)) {
+            if (this.servicesTimer[id] !== undefined)
+                clearTimeout(this.servicesTimer[id]);
+            this.servicesTimer[id] = undefined;
+        }
     }
     /**
      * Return a general service info
@@ -395,6 +463,7 @@ class ServiceManager extends vrack2_core_1.Device {
     */
     apiServiceStop(data) {
         return __awaiter(this, void 0, void 0, function* () {
+            var _a;
             const conf = this.getService(data.service);
             if (this.servicesTimer[conf.id] !== undefined && !conf.run) {
                 this.servicesTimer[conf.id] = undefined;
@@ -403,17 +472,46 @@ class ServiceManager extends vrack2_core_1.Device {
             }
             if (!conf.run)
                 throw vrack2_core_1.ErrorManager.make('SM_SERVICE_NOT_RUN');
+            // Явный стоп — терминальное состояние: не даем autoReload возродить сервис,
+            // даже если воркер сообщит об ошибке graceful-остановки и затем завершится
+            conf.autoReload = false;
+            const wid = this.servicesWorker[conf.id];
+            let timedOut = false;
+            // Страховка от зависшего воркера: по таймауту принудительно убиваем его.
+            // unref — чтобы хвост таймера не держал процесс main живым при глобальном завершении
+            const killer = setTimeout(() => {
+                timedOut = true;
+                try {
+                    this.ports.output['worker.stop'].push({ id: wid }).catch(() => { });
+                }
+                catch (e) { /* worker уже мог исчезнуть */ }
+            }, Number(this.options.stopTimeout));
+            (_a = killer.unref) === null || _a === void 0 ? void 0 : _a.call(killer);
             try {
-                yield this.ports.output['worker.stop'].push({ id: this.servicesWorker[conf.id] });
-                this.Container.emit('ServiceManager.service.stop', { service: conf });
-                return conf;
+                // Грациозная фаза: воркер сам останавливает свой контейнер устройств
+                // (onStop/onStopAsync хуки, журнал сбрасывается в Service.shutdown/onStop) и завершает поток.
+                // Штатный исход — WM_WORKER_EXIT: pending-запрос отклоняется обработчиком exit события
+                yield this.inputSubmaster(this.makeServiceRequest('serviceStop', { service: conf.id }));
             }
             catch (error) {
-                this.broadcastUpdate([conf.id]);
-                if (error instanceof vrack2_core_1.CoreError && error.vShort === 'WM_WORKER_EXIT')
-                    return 'success';
-                throw error;
+                if (!(error instanceof vrack2_core_1.CoreError && error.vShort === 'WM_WORKER_EXIT'))
+                    throw error;
+                if (timedOut)
+                    this.addError(conf.id, vrack2_core_1.ErrorManager.make('SM_SERVICE_STOP_TIMEOUT', { id: conf.id }));
             }
+            finally {
+                clearTimeout(killer);
+            }
+            try {
+                // Финальная страховка: принудительная остановка (no-op, если воркер уже сам завершился)
+                yield this.ports.output['worker.stop'].push({ id: wid });
+            }
+            catch (error) {
+                if (!(error instanceof vrack2_core_1.CoreError && error.vShort === 'WM_WORKER_EXIT'))
+                    throw error;
+            }
+            this.Container.emit('ServiceManager.service.stop', { service: conf });
+            return conf;
         });
     }
     /***
@@ -458,8 +556,15 @@ class ServiceManager extends vrack2_core_1.Device {
             const ret = [];
             if (this.servicesErrors[data.service]) {
                 for (const er of this.servicesErrors[data.service]) {
-                    for (const rer of er.vAddErrors)
-                        ret.push(rer);
+                    if (er.vAddErrors && er.vAddErrors.length > 0) {
+                        for (const rer of er.vAddErrors)
+                            ret.push(rer);
+                    }
+                    else {
+                        // Топ-уровневая ошибка без вложенных — возвращаем саму себя,
+                        // иначе она была бы невидима (например, SM_SERVICE_STOP_TIMEOUT)
+                        ret.push(er);
+                    }
                 }
             }
             return ret;
@@ -477,6 +582,65 @@ class ServiceManager extends vrack2_core_1.Device {
             this.servicesList[data.service].errors = 0;
             this.broadcastUpdate([data.service]);
             return {};
+        });
+    }
+    /**
+     * Set the journal capture toggles of a service: persist them in the meta
+     * file as flat keys (journalEvents/journalMetrics/journalPorts) and apply
+     * them live to a running worker (internal serviceJournalSet).
+     *
+     * @param service Service ID
+     * @param journal Capture toggles (null = reset to defaults: events/metrics on, ports off)
+     * @see IJournalToggles
+    */
+    setJournal(service, journal) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const conf = this.getService(service);
+            const meta = this.getMeta(service);
+            delete meta.journalEvents;
+            delete meta.journalMetrics;
+            delete meta.journalPorts;
+            if (journal) {
+                if (journal.events !== undefined)
+                    meta.journalEvents = journal.events;
+                if (journal.ports !== undefined)
+                    meta.journalPorts = journal.ports;
+                if (journal.metrics !== undefined)
+                    meta.journalMetrics = journal.metrics;
+            }
+            this.servicesMeta[service] = meta;
+            try {
+                const raw = vrack2_core_1.ImportManager.isFile(conf.metaPath) ? vrack2_core_1.ImportManager.importJSON(conf.metaPath) : {};
+                delete raw.journal;
+                delete raw.journalEvents;
+                delete raw.journalMetrics;
+                delete raw.journalPorts;
+                if (journal) {
+                    if (journal.events !== undefined)
+                        raw.journalEvents = journal.events;
+                    if (journal.ports !== undefined)
+                        raw.journalPorts = journal.ports;
+                    if (journal.metrics !== undefined)
+                        raw.journalMetrics = journal.metrics;
+                }
+                fs_1.default.writeFileSync(conf.metaPath, JSON.stringify(raw, null, '\t'));
+            }
+            catch (error) {
+                this.error('save service meta journal', vrack2_core_1.ErrorManager.make('SM_META_SAVE_ERROR', { service, path: conf.metaPath }).add(error));
+            }
+            if (conf.run && this.servicesWorker[service]) {
+                try {
+                    yield this.inputSubmaster(this.makeServiceRequest('serviceJournalSet', { service, journal: journal !== null && journal !== void 0 ? journal : null }));
+                }
+                catch (error) {
+                    this.error('apply service journal', vrack2_core_1.ErrorManager.make('SM_JOURNAL_APPLY_ERROR', { service }).add(error));
+                }
+            }
+            return { journal: {
+                    events: meta.journalEvents !== false,
+                    ports: meta.journalPorts === true,
+                    metrics: meta.journalMetrics !== false,
+                } };
         });
     }
     /**
@@ -528,7 +692,7 @@ class ServiceManager extends vrack2_core_1.Device {
         for (const dirConf of this.options.servicesDirs) {
             if (!dirConf.generate)
                 continue; // Если генерация для директории отключена
-            fs_1.default.watch(path_1.default.join(dirConf.dir), { encoding: 'utf8' }, (eventType, filename) => {
+            this.watchers.push(fs_1.default.watch(path_1.default.join(dirConf.dir), { encoding: 'utf8' }, (eventType, filename) => {
                 if (!filename)
                     return;
                 if (eventType !== 'change')
@@ -555,10 +719,10 @@ class ServiceManager extends vrack2_core_1.Device {
                         // Добавляем его к списку ошибок сервиса
                         this.addError(res[0], error);
                         if (error instanceof Error)
-                            this.error('Error generate service file', error);
+                            this.error('convert service file', vrack2_core_1.ErrorManager.make('SM_SERVICE_CONVERT_ERROR', { service: res[0], dir: dirConf.dir, filename }).add(error));
                     }
                 }), 500));
-            });
+            }));
         }
     }
     /**
@@ -745,7 +909,7 @@ class ServiceManager extends vrack2_core_1.Device {
                 yield this.inputSubmaster(iReq);
             }
             catch (err) {
-                this.error("Error send submaser container event", err);
+                this.error('send submaster container event', vrack2_core_1.ErrorManager.make('SM_SUBMASTER_EVENT_ERROR', { service, channel }).add(err));
             }
         });
     }

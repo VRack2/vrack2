@@ -1,8 +1,13 @@
-import { BasicMetric, Device, Metric, Port, Rule } from "vrack2-core";
+import { Device, ErrorManager, Metric, MetricOne, Port, Rule } from "vrack2-core";
 import BasicPort from "vrack2-core/lib/ports/BasicPort";
 import BasicType from "vrack2-core/lib/validator/types/BasicType";
 import WebSocket from "ws"
 import IProviderMessage from "./interfaces/IProviderMessage";
+
+ErrorManager.register('WSProvider', 'WS_SERVER_ERROR',
+  'The WebSocket server reported an error', {
+  port: Rule.number().required().example(4044).description('Websocket server port')
+})
 
 export default class WSProvider extends Device {
   description(): string {
@@ -14,14 +19,14 @@ export default class WSProvider extends Device {
   outputs(): { [key: string]: BasicPort; } {
     return {
       command: Port.return().description('Port for client command request'),
-      register: Port.standart().description('Client register'),
-      unregister: Port.standart().description('Client unregister')
+      register: Port.standard().description('Client register'),
+      unregister: Port.standard().description('Client unregister')
     }
   }
 
   inputs(): { [key: string]: BasicPort; } {
     return {
-      send: Port.standart().description('To client send port')
+      send: Port.standard().description('To client send port')
     }
   }
 
@@ -32,10 +37,10 @@ export default class WSProvider extends Device {
     }
   }
 
-  metrics(): { [key: string]: BasicMetric; } {
+  metrics(): { [key: string]: MetricOne; } {
       return {
-        'byte.send': Metric.inS().retentions('1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('Count bytes send to client in min'),
-        'byte.receive': Metric.inS().retentions('1m:1d, 1h:1w, 6h:1mon, 1d:1y').description('Count bytes receive from client in min')
+        'byte.send': Metric.one().descriptions('Count bytes send to client in min'),
+        'byte.receive': Metric.one().descriptions('Count bytes receive from client in min')
       }
   }
 
@@ -65,16 +70,42 @@ export default class WSProvider extends Device {
     send: 0,
   }
 
-  process() {
+  /** WebSocket server instance (closed on onStop) */
+  protected wss?: WebSocket.Server
+
+  /** Heartbeat ping interval handle (cleared on onStop) */
+  protected pingTimer?: NodeJS.Timeout
+
+  /** Byte metrics interval handle (cleared on onStop) */
+  protected metricTimer?: NodeJS.Timeout
+
+  onStart() {
     this.createServer()
     this.pingInterval()
 
-    setInterval(()=>{
+    this.metricTimer = setInterval(()=>{
       this.metric('byte.send', this.stats.send/1024/1024)
       this.metric('byte.receive', this.stats.receive/1024/1024)
       this.stats.send = 0
       this.stats.receive = 0
     },60*1000)
+  }
+
+  /**
+   * Release every host resource owned by this device: stop the intervals,
+   * terminate connected clients (their 'close' handlers emit unregister while
+   * Guard/ProvidersClients are still running — WSProvider is stopped after
+   * them in Container.stopAll reverse order) and close the listening server.
+   * Without this the port stays bound and the intervals keep the event loop
+   * alive, so a restart of the device fails with EADDRINUSE.
+   */
+  onStop(): void {
+    if (this.pingTimer) { clearInterval(this.pingTimer); this.pingTimer = undefined }
+    if (this.metricTimer) { clearInterval(this.metricTimer); this.metricTimer = undefined }
+    this.websocketList.forEach((ws) => ws.terminate())
+    this.websocketList.clear()
+    this.websocketAlive = {}
+    if (this.wss) { this.wss.close(); this.wss = undefined }
   }
 
   /**
@@ -85,6 +116,7 @@ export default class WSProvider extends Device {
   */
   createServer() {
     const wss = new WebSocket.Server({ port: this.options.port })
+    this.wss = wss
     wss.on('connection', (ws, req) => {
       const id = this.getIndex()
       this.websocketAlive[id] = true
@@ -104,7 +136,7 @@ export default class WSProvider extends Device {
    * If the client does not respond the connection will be disconnected
   */
   pingInterval(){
-    setInterval(() => {
+    this.pingTimer = setInterval(() => {
       this.websocketList.forEach((ws, id) => {
         if (this.websocketAlive[id] === false) {
           this.websocketList.delete(id)
@@ -164,7 +196,7 @@ export default class WSProvider extends Device {
   serverOnError(error: Error){
     console.error('Error websocket server')
     console.error(error)
-    this.error(`Provider '${this.provider}' error`, error)
+    this.error('websocket server error', ErrorManager.make('WS_SERVER_ERROR', { port: this.options.port }).add(error))
   }
 
   /**
