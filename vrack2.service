@@ -1,14 +1,25 @@
 [Unit]
 Description=VRack2 Service Manager
-After=network.target
+Documentation=https://github.com/VRack2/vrack2-service
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
-ExecStart=/usr/bin/npm run start
+ExecStart=/usr/bin/node ./run/index
 Restart=always
+RestartSec=5
+TimeoutStopSec=60
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vrack2
 User=root
 Group=root
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
 Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--max-old-space-size=1024
+# EnvironmentFile=-/etc/default/vrack2
 WorkingDirectory=/opt/vrack2-service
 
 [Install]
