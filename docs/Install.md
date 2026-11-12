@@ -27,7 +27,7 @@ cd ./vrack2-service
 Устанавливаем зависимости через npm (на данный момент одна vrack2-core): 
 
 ```bash
-npm install --production
+npm install --omit=dev
 ```
 
 Создаем необходимые директории
@@ -41,11 +41,11 @@ mkdir -p ./devices ./storage ./structure ./services
 cd ./devices
 git clone https://github.com/VRack2/vrack2.git
 ```
-Теперь надо установить зависимости для сервиса VRack2 (`ws` — WebSocket-сервер и `vrack2-journal-db` — персистентный журнал):
+Теперь надо установить зависимости для сервиса VRack2 (`ws` — WebSocket-сервер; персистентный журнал `vrack2-journal-db` приходит как зависимость `vrack2-core`):
 
 ```bash
 cd ./vrack2
-npm install --production
+npm install --omit=dev
 ```
 
 Базовая установка завершена, вы уже можете запустить VRack2:
@@ -66,6 +66,7 @@ npm run start
   services/       # Директория для сервис файлов
   storage/        # Директория где храняться индивидуальные данные устройств
   structure/      # Директория для хранения структур контейнеров сервиса
+  journals/       # Журнал-хранилище journal-db (создаётся автоматически при запуске)
 ```
 
 Используя [VRack2-Manager](https://github.com/VRack2/vrack2-manager) можно подключится и работающему инстансу VRack2.
@@ -87,7 +88,7 @@ systemctl start vrack2
 Проверяем статус:
 
 ```bash
-service vrack2 status
+systemctl status vrack2
 ```
 
 **Теперь стоит переходить к написанию своего [первого сервиса](./FirstService.md)**
